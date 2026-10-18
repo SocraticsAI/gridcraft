@@ -176,7 +176,9 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
                     ui.add_space(8.0);
-                    file_menu(app, ui);
+                    if app.chrome.file_tab {
+                        file_menu(app, ui);
+                    }
                     let mut tabs: Vec<&str> = TABS.to_vec();
                     let ctx_tabs = contextual_tabs(app);
                     tabs.extend(ctx_tabs.iter());
