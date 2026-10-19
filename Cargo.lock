@@ -2076,6 +2076,9 @@ dependencies = [
 [[package]]
 name = "gridcraft-pdf"
 version = "0.13.0"
+dependencies = [
+ "gridcraft-core",
+]
 
 [[package]]
 name = "gridcraft-ui-egui"

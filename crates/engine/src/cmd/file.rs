@@ -92,7 +92,7 @@ fn open(s: &mut Session, p: &Json) -> Result<Json> {
     }
     let i = s.add_document(doc);
     // The decrypted-workbook notice is for the info bar, not a message box.
-    let shown: Vec<&str> = warnings.iter().map(String::as_str).filter(|w| *w != crate::io::DECRYPTED_NOTICE).collect();
+    let shown: Vec<&str> = warnings.iter().map(String::as_str).filter(|w| *w != crate::io::decrypted_notice()).collect();
     if !shown.is_empty() {
         let mut message = shown.iter().take(5).copied().collect::<Vec<_>>().join("\n\n");
         if shown.len() > 5 {

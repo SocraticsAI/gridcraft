@@ -183,13 +183,14 @@ pub fn set(wb: &mut Workbook, key: &str, text: &str) -> Result<()> {
     };
     if let Some(n) = wb.names.iter().find(taken) {
         return Err(EngineError::Other(format!(
-            "The workbook has a defined name '{}', which GridCraft needs for its own data. Rename it first.",
-            n.name
+            "The workbook has a defined name '{}', which {} needs for its own data. Rename it first.",
+            n.name,
+            gridcraft_core::brand::name()
         )));
     }
     remove(wb, key);
     for (i, formula) in formulas.into_iter().enumerate() {
-        wb.names.push(DefinedName { name: format!("{PREFIX}{key}_{i}"), scope: None, formula, comment: "GridCraft data".into(), hidden: true });
+        wb.names.push(DefinedName { name: format!("{PREFIX}{key}_{i}"), scope: None, formula, comment: format!("{} data", gridcraft_core::brand::name()), hidden: true });
     }
     Ok(())
 }

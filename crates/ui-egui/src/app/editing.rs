@@ -105,7 +105,7 @@ impl SheetApp {
         let text = match self.session.active().map(|d| formula_locale::canonical(&text, ed.locale, &d.wb, ed.sheet, ed.cell)) {
             Some(Ok(text)) => text,
             Some(Err(error)) => {
-                self.message = Some(("GridCraft".into(), error.to_string()));
+                self.message = Some((gridcraft_engine::core::brand::name().into(), error.to_string()));
                 self.editor = Some(ed);
                 self.session.mode = gridcraft_engine::Mode::Edit;
                 return false;
@@ -117,7 +117,7 @@ impl SheetApp {
             && let Some((dv, msg)) = gridcraft_engine::cmd::data::check_validation(&d.wb, ed.sheet, ed.cell, &text)
         {
             if dv.error_style == gridcraft_engine::model::ErrorStyle::Stop {
-                let title = if dv.error_title.is_empty() { "GridCraft".to_string() } else { dv.error_title.clone() };
+                let title = if dv.error_title.is_empty() { gridcraft_engine::core::brand::name().to_string() } else { dv.error_title.clone() };
                 self.message = Some((title, msg));
                 self.editor = Some(ed);
                 self.session.mode = gridcraft_engine::Mode::Edit;
@@ -129,7 +129,7 @@ impl SheetApp {
         if self.session.active().is_some_and(|d| d.wb.active_sheet() != ed.sheet)
             && let Err(e) = self.session.run("sheet.activate", json!({"sheet": ed.sheet}))
         {
-            self.message = Some(("GridCraft".into(), clean_error(&e)));
+            self.message = Some((gridcraft_engine::core::brand::name().into(), clean_error(&e)));
             self.editor = Some(ed);
             self.session.mode = gridcraft_engine::Mode::Edit;
             return false;
@@ -160,7 +160,7 @@ impl SheetApp {
                 true
             }
             Err(e) => {
-                self.message = Some(("GridCraft".into(), clean_error(&e)));
+                self.message = Some((gridcraft_engine::core::brand::name().into(), clean_error(&e)));
                 self.editor = Some(ed);
                 self.session.mode = gridcraft_engine::Mode::Edit;
                 false

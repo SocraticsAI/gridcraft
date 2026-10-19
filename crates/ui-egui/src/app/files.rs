@@ -6,7 +6,7 @@ impl SheetApp {
             Ok(r) => self.after_open(Some(path), &r),
             // A password-protected workbook: ask for the password; the dialog opens it.
             Err(e) if e.contains(gridcraft_engine::io::PASSWORD_REQUIRED) => self.open_dialog("openPassword", json!({"path": path})),
-            Err(e) => self.message = Some(("GridCraft".into(), clean_error(&e))),
+            Err(e) => self.message = Some((gridcraft_engine::core::brand::name().into(), clean_error(&e))),
         }
         self.after_engine();
     }
@@ -46,11 +46,11 @@ impl SheetApp {
             // The reader says "dropped" when the VBA project was missing or unreadable; never promise to keep it then.
             let dropped = vba.iter().any(|m| m.contains("dropped"));
             let text = if dropped {
-                "This workbook's VBA macros could not be loaded and were dropped, so they will not be in the saved file. Keep the original file."
+                "This workbook's VBA macros could not be loaded and were dropped, so they will not be in the saved file. Keep the original file.".to_string()
             } else {
-                "This workbook contains VBA macros. GridCraft keeps them when you save as .xlsm, but does not run them."
+                format!("This workbook contains VBA macros. {} keeps them when you save as .xlsm, but does not run them.", gridcraft_engine::core::brand::name())
             };
-            self.notice = Some(Notice { text: text.into(), kind: NoticeKind::Warning, action: Some(("What this means".into(), "macros".into())) });
+            self.notice = Some(Notice { text, kind: NoticeKind::Warning, action: Some(("What this means".into(), "macros".into())) });
         } else {
             let text = if msgs.len() == 1 {
                 msgs[0].to_string()
@@ -95,7 +95,7 @@ impl SheetApp {
                     self.backstage = None;
                     self.open_dialog("openPassword", json!({"name": name, "base64": b64}));
                 }
-                Err(e) => self.message = Some(("GridCraft".into(), clean_error(&e))),
+                Err(e) => self.message = Some((gridcraft_engine::core::brand::name().into(), clean_error(&e))),
             }
             self.after_engine();
         }
