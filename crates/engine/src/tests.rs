@@ -3189,7 +3189,7 @@ fn encrypted_workbooks_open_with_their_password() {
 
     // The right password opens it: no save path, the file name as title, the notice first.
     let r = open(&mut s, Some(PW)).unwrap();
-    assert_eq!(r["warnings"][0], crate::io::DECRYPTED_NOTICE);
+    assert_eq!(r["warnings"][0], crate::io::decrypted_notice());
     assert_eq!(r["title"], "Secret.xlsx");
     assert_eq!(v(&s, "A1"), Value::Number(42.0));
     assert_eq!(s.doc().unwrap().path, None);
