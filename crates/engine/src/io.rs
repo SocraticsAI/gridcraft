@@ -46,6 +46,12 @@ pub const WRONG_PASSWORD: &str = "The password is incorrect.";
 /// The first open warning of a workbook decrypted with its password.
 pub const DECRYPTED_NOTICE: &str = "This workbook was password-protected. GridCraft saves it without the password.";
 
+/// [`DECRYPTED_NOTICE`] with the host's product name (`gridcraft_core::brand`): the warning `open` adds
+/// for a decrypted workbook. Compare warnings with this, not the constant.
+pub fn decrypted_notice() -> String {
+    DECRYPTED_NOTICE.replace(gridcraft_core::brand::DEFAULT_NAME, gridcraft_core::brand::name())
+}
+
 /// Parses a file's bytes into a workbook. `name` picks the format by extension when the bytes
 /// don't say. An encrypted workbook needs [`open_bytes_with_password`].
 pub fn open_bytes(name: &str, bytes: &[u8]) -> Result<(Workbook, Vec<String>)> {
@@ -79,7 +85,7 @@ pub fn open_bytes_with(name: &str, bytes: &[u8], password: Option<&str>, csv_as_
     }
     let (mut wb, mut warnings) = open_plain(name, &plain, csv_as_text)?;
     fit_imported_rows(&mut wb);
-    warnings.insert(0, DECRYPTED_NOTICE.into());
+    warnings.insert(0, decrypted_notice());
     Ok((wb, warnings))
 }
 
@@ -112,7 +118,7 @@ fn decrypt_message(name: &str, e: gridcraft_xlsx::DecryptError) -> String {
     match e {
         gridcraft_xlsx::DecryptError::WrongPassword => format!("{WRONG_PASSWORD} Check that Caps Lock is off and try again."),
         gridcraft_xlsx::DecryptError::Unsupported(scheme) => {
-            format!("'{name}' uses {scheme} encryption, which GridCraft can't open yet. Remove the password in Excel and try again.")
+            format!("'{name}' uses {scheme} encryption, which can't be opened yet. Remove the password in Excel and try again.")
         }
         gridcraft_xlsx::DecryptError::Malformed(detail) => format!("We can't open '{name}': the encrypted file is damaged ({detail})."),
     }
@@ -128,7 +134,7 @@ fn open_plain(name: &str, bytes: &[u8], csv_as_text: bool) -> Result<(Workbook, 
     }
     if sniffed == gridcraft_xlsx::Format::LegacyBinary {
         return Err(EngineError::Other(format!(
-            "'{name}' is a legacy binary file but not an Excel workbook (no workbook stream). GridCraft can't open it."
+            "'{name}' is a legacy binary file but not an Excel workbook (no workbook stream), so it can't be opened."
         )));
     }
     // Content wins over the extension: an ODS or XLSB package is imported as what it is,
@@ -152,7 +158,8 @@ fn open_plain(name: &str, bytes: &[u8], csv_as_text: bool) -> Result<(Workbook, 
     }
     match kind {
         Some(FileKind::Json) => {
-            let mut wb: Workbook = serde_json::from_slice(bytes).map_err(|e| EngineError::Other(format!("not a GridCraft JSON workbook: {e}")))?;
+            let mut wb: Workbook =
+                serde_json::from_slice(bytes).map_err(|e| EngineError::Other(format!("not a JSON workbook this app can open: {e}")))?;
             wb.styles.rebuild_index();
             if wb.sheets.is_empty() {
                 wb = Workbook::new();

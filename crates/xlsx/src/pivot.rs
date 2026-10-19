@@ -688,7 +688,10 @@ fn cache_xml(c: &Cache, records_rid: Option<&str>, sys: DateSystem) -> String {
         }
         _ => s.push_str(" saveData=\"0\""),
     }
-    s.push_str(" refreshOnLoad=\"1\" refreshedBy=\"GridCraft\" createdVersion=\"6\" refreshedVersion=\"6\" minRefreshableVersion=\"3\">");
+    s.push_str(&format!(
+        " refreshOnLoad=\"1\" refreshedBy=\"{}\" createdVersion=\"6\" refreshedVersion=\"6\" minRefreshableVersion=\"3\">",
+        crate::xml::esc_attr(gridcraft_core::brand::name())
+    ));
     let _ = write!(s, "<cacheSource type=\"worksheet\">{}</cacheSource>", c.source_xml);
     let _ = write!(s, "<cacheFields count=\"{}\">", c.fields.len());
     for f in &c.fields {
