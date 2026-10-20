@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! GridCraft's egui frontend: an Excel-style window (title bar with Quick Access Toolbar,
 //! ribbon, formula bar, grid, sheet tabs, status bar) over `gridcraft-engine`.
 //!

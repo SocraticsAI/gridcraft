@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! More ribbon commands: Chart Design and Format, object arrangement, workbook views, table
 //! tools, Get Data, scripts (Automate), cell checkboxes, theme colours and fonts.
 

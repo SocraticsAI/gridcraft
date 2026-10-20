@@ -1,3 +1,4 @@
+// Added by Socratics, 2026. See MODIFICATIONS.md.
 //! The host's product name (its own test binary: the name is process-wide and set once).
 
 use gridcraft_core::brand;

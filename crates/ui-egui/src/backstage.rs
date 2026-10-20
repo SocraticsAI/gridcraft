@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! File tab Backstage view (#174): a full-window page that replaces the ribbon, formula bar, grid
 //! and sheet tabs until Esc or the back arrow returns to the sheet.
 //!

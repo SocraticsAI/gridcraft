@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! A tiny, self-contained PDF 1.7 writer for GridCraft's print and PDF export.
 //!
 //! - The 14 standard fonts (no embedding) with WinAnsiEncoding, plus approximate width tables

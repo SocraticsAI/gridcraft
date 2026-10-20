@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! PivotTables: pivot cache definitions and records (ECMA-376 Part 1 §18.10.1) and PivotTable
 //! definitions (§18.10.1.73), written from the model's [`PivotTable`]s and read back into them.
 //!

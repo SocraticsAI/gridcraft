@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! Dialogs. Simple dialogs are forms (fields → a command with params); Format Cells, Insert
 //! Function, Find & Replace, Sort, Name Manager and the command palette are custom.
 //!

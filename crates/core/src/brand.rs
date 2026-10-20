@@ -1,3 +1,4 @@
+// Added by Socratics, 2026. See MODIFICATIONS.md.
 //! The product name GridCraft shows in its interface and writes into the files it saves (document
 //! properties, PDF metadata, generated reports, the default comment author). A host that embeds
 //! GridCraft under its own name sets it once, at startup, before any workbook opens.

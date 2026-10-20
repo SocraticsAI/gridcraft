@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! Writing a workbook as an XLSX package.
 
 use std::collections::{BTreeMap, HashMap};

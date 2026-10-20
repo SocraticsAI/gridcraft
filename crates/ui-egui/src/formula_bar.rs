@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! The formula bar (Name Box, ✕ ✓ fx, formula field) and the shared cell editor widget.
 
 use egui::{FontId, Key, Rect, Sense, Stroke, StrokeKind, TextEdit, pos2, vec2};
