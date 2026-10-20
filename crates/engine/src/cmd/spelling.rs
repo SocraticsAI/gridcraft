@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! Spelling: checks text cells against the system word list (`/usr/share/dict/words` on macOS
 //! and Linux; nothing is bundled) plus a user dictionary kept in the engine preferences.
 

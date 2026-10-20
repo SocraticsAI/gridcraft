@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: adds the host `Chrome` switch (title bar, File tab) and takes product-name text from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! Title bar (Quick Access Toolbar), ribbon tabs and ribbon groups, and keyboard shortcuts.
 
 use egui::{Align2, Color32, Key, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};

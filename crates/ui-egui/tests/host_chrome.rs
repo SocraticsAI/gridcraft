@@ -1,3 +1,4 @@
+// Added by Socratics, 2026. See MODIFICATIONS.md.
 //! A host that embeds the sheet in its own window can turn off the app's title bar and File tab.
 
 use egui_kittest::kittest::Queryable as _;
