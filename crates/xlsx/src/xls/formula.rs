@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! BIFF8 parsed formulas ([MS-XLS] 2.2.2, 2.5.198): reverse-Polish `Ptg` tokens back to an
 //! expression tree. Anything outside the common token set is reported as unsupported, and the
 //! caller keeps the cell's cached value instead.

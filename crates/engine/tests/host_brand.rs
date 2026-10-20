@@ -1,3 +1,4 @@
+// Added by Socratics, 2026. See MODIFICATIONS.md.
 //! A host can give GridCraft its own product name: the default comment author, the warning for a
 //! decrypted workbook and the files it saves all carry it (its own test binary: the name is process-wide).
 

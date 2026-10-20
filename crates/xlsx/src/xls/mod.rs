@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! Legacy Excel 97-2003 `.xls` (BIFF8) import, implemented from Microsoft's public
 //! specifications [MS-CFB] (the compound file container) and [MS-XLS] (the Workbook stream):
 //! <https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-xls/cd03cb5f-ca02-4934-a391-bb674cb8aa06>.

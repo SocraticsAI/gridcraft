@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! File menu: new, open, save, close, export, properties, options.
 
 use serde_json::{Value as Json, json};

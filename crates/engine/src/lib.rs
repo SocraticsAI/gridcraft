@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! The GridCraft engine façade.
 //!
 //! Every user-visible action is a command with a stable id (`cell.set`, `home.bold`,

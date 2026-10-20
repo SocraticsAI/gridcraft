@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 use gridcraft_core::{CellRef, Value};
 use serde_json::json;
 
