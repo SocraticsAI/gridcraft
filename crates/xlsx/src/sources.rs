@@ -15,7 +15,7 @@ use std::sync::Arc;
 use gridcraft_core::CellRef;
 use gridcraft_model::{SourceLink, Workbook};
 
-use crate::package::Rel;
+use crate::package::{Rel, normalize};
 use crate::read::Ctx;
 use crate::write::{Out, Rels, XML_DECL};
 use crate::xml::{self, esc_attr};
@@ -28,8 +28,6 @@ const CT_PROPS: &str = "application/vnd.openxmlformats-officedocument.customXmlP
 const NS_DS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/customXml";
 /// Data store item id of the part (any GUID; the same in every file).
 const ITEM_ID: &str = "{6F1C5E2A-3B7D-4C8E-9A0F-5D2B1E4C7A90}";
-/// Largest part read.
-const MAX_PART: u64 = 64 * 1024 * 1024;
 /// Most links read from one file.
 const MAX_LINKS: usize = 2_000_000;
 
@@ -79,20 +77,23 @@ fn mentions_ns(bytes: &[u8]) -> bool {
     bytes.windows(NS.len()).any(|w| w == NS.as_bytes())
 }
 
-/// Whether `part` (the target of a workbook `customXml` relationship) is a source-links part.
-pub fn is_sources_part(cx: &mut Ctx<'_>, part: &str) -> bool {
-    match cx.pkg.read_limited(part, MAX_PART) {
-        Ok(Some(b)) => mentions_ns(&b) && xml::parse(&b).is_ok_and(|root| root.name == "sources"),
-        _ => false,
-    }
+/// Whether `part` (the target of a workbook `customXml` relationship) is a source-links part
+/// that [`read`] took into the model. Doesn't read the part again.
+pub fn is_sources_part(cx: &Ctx<'_>, part: &str) -> bool {
+    cx.sources_parts.contains(&normalize(part))
 }
 
 /// Reads the links of every source-links part related from the workbook into its sheets, by
 /// sheet name. Unknown sheets, bad references and links without a file or locator are skipped.
+/// Each part is read once, under the package's own per-part and total limits, and recorded in
+/// `cx.sources_parts`.
 pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
     let mut count = 0usize;
     for r in wb_rels.iter().filter(|r| !r.external && r.kind.eq_ignore_ascii_case("customXml")) {
-        let bytes = match cx.pkg.read_limited(&r.target, MAX_PART) {
+        if is_sources_part(cx, &r.target) {
+            continue;
+        }
+        let bytes = match cx.pkg.read(&r.target) {
             Ok(Some(b)) => b,
             Ok(None) => continue,
             Err(e) => {
@@ -111,6 +112,7 @@ pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
                 continue;
             }
         };
+        cx.sources_parts.push(normalize(&r.target));
         for se in root.kids("sheet") {
             let Some(si) = se.attr("name").and_then(|n| wb.sheet_index(n)) else { continue };
             let Some(sheet) = wb.sheets.get_mut(si) else { continue };
@@ -183,6 +185,28 @@ mod tests {
         assert_eq!(back.sheets[0].sources, wb.sheets[0].sources);
         assert_eq!(back.sheets[1].sources, wb.sheets[1].sources);
         // Saving the reopened file writes the part once: it isn't also kept as unmodelled custom XML.
+        let again = write_xlsx(&back).unwrap();
+        assert_eq!(sources_parts(&again).len(), 1);
+        let (third, _) = read_xlsx(&again).unwrap();
+        assert_eq!(third.sheets[0].sources, wb.sheets[0].sources);
+    }
+
+    #[test]
+    fn a_links_part_over_64_mib_reopens_with_every_link_and_is_written_once() {
+        let mut wb = Workbook::new();
+        let s0 = wb.sheet_mut(0).unwrap();
+        let long = "x".repeat(70_000);
+        for i in 0..1_000u32 {
+            s0.sources.insert(
+                CellRef::new(i, 0),
+                SourceLink { file: format!("Data Room/f{i}.pdf"), locator: format!("{i}:{long}"), store_row: format!("S!A{i}") },
+            );
+        }
+        let bytes = write_xlsx(&wb).unwrap();
+        let (back, report) = read_xlsx(&bytes).unwrap();
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+        assert_eq!(back.sheets[0].sources.len(), 1_000);
+        assert_eq!(back.sheets[0].sources, wb.sheets[0].sources);
         let again = write_xlsx(&back).unwrap();
         assert_eq!(sources_parts(&again).len(), 1);
         let (third, _) = read_xlsx(&again).unwrap();
