@@ -477,4 +477,29 @@ mod tests {
         assert_eq!(locator(&s, "F1").as_deref(), Some("f1"));
         assert_eq!(locator(&s, "G1"), None);
     }
+
+    #[test]
+    fn merge_across_keeps_each_rows_anchor_link_over_many_rows_and_columns() {
+        let mut s = s();
+        for (c, l) in [("B6", "b6"), ("C6", "c6"), ("D6", "d6"), ("B7", "b7"), ("D7", "d7"), ("B8", "b8"), ("E7", "outside"), ("A7", "left")] {
+            put(&mut s, c, 1.0, l);
+        }
+        // A link on a cell with no value, in a row's emptied part.
+        s.execute("source.set", json!({"range": "C8", "links": [[link_json("c8")]]})).unwrap();
+        s.execute("home.mergeAcross", json!({"range": "B6:D8"})).unwrap();
+        for (c, l) in [("B6", "b6"), ("B7", "b7"), ("B8", "b8"), ("E7", "outside"), ("A7", "left")] {
+            assert_eq!(locator(&s, c).as_deref(), Some(l), "{c} keeps its link");
+        }
+        for c in ["C6", "D6", "D7", "C8"] {
+            assert_eq!(locator(&s, c), None, "{c} was emptied by the merge");
+        }
+        // A single column merges nothing across, so it drops nothing.
+        put(&mut s, "G1", 1.0, "g1");
+        put(&mut s, "G2", 2.0, "g2");
+        s.execute("home.mergeAcross", json!({"range": "G1:G2"})).unwrap();
+        assert_eq!(locator(&s, "G2").as_deref(), Some("g2"));
+        // Whole columns: one pass over the links, not one per row.
+        s.execute("home.mergeAcross", json!({"range": "I:J"})).unwrap();
+        assert_eq!(locator(&s, "B6").as_deref(), Some("b6"));
+    }
 }

@@ -573,12 +573,16 @@ fn merge(s: &mut Session, p: &Json, how: &str) -> Result<Json> {
             match how {
                 "unmerge" => {}
                 "across" => {
+                    // Every row is merged when the range is wider than one column: the emptied
+                    // cells' source links go with their values, each row's anchor keeps its own.
+                    // One pass over the links, not one per row.
+                    if r.width() > 1 {
+                        sh.sources.retain(|c, _| !r.contains(*c) || c.col == r.start.col);
+                    }
                     for row in r.start.row..=r.end.row {
                         let m = RangeRef::new(CellRef::new(row, r.start.col), CellRef::new(row, r.end.col));
                         if !m.is_single() {
                             sh.merges.push(m);
-                            // The emptied cells' source links go with their values; the row's anchor keeps its own.
-                            sh.sources.retain(|c, _| !m.contains(*c) || *c == m.start);
                             // As below: only the first value of each row survives.
                             let others: Vec<CellRef> = sh.cells.iter_range(m).map(|(c, _)| c).filter(|c| *c != m.start).collect();
                             for c in others {
