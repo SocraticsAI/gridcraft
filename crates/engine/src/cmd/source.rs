@@ -447,4 +447,34 @@ mod tests {
         s.execute("range.setValues", json!({"range": "C2", "values": [[3]]})).unwrap();
         assert_eq!(locator(&s, "C2"), None);
     }
+
+    #[test]
+    fn merging_drops_the_links_of_the_cells_it_empties() {
+        let mut s = s();
+        for (c, l) in [("A1", "a1"), ("B1", "b1"), ("A3", "a3"), ("B3", "b3"), ("A4", "a4"), ("B4", "b4"), ("D1", "d1"), ("E1", "e1")] {
+            put(&mut s, c, 1.0, l);
+        }
+        s.execute("home.mergeCells", json!({"range": "A1:B1"})).unwrap();
+        assert_eq!(locator(&s, "A1").as_deref(), Some("a1"), "the anchor keeps its link");
+        assert_eq!(locator(&s, "B1"), None);
+        s.execute("home.mergeAcross", json!({"range": "A3:B4"})).unwrap();
+        assert_eq!(locator(&s, "A3").as_deref(), Some("a3"), "each row's anchor keeps its link");
+        assert_eq!(locator(&s, "A4").as_deref(), Some("a4"));
+        assert_eq!(locator(&s, "B3"), None);
+        assert_eq!(locator(&s, "B4"), None);
+        s.execute("home.mergeCenter", json!({"range": "D1:E1"})).unwrap();
+        assert_eq!(locator(&s, "D1").as_deref(), Some("d1"));
+        assert_eq!(locator(&s, "E1"), None);
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(locator(&s, "E1").as_deref(), Some("e1"), "undo brings the link back");
+        // Unmerging empties nothing, so it drops nothing.
+        s.execute("home.mergeCenter", json!({"range": "A1:B1"})).unwrap();
+        assert_eq!(locator(&s, "A1").as_deref(), Some("a1"));
+        // A link on a cell with no value inside the merged area goes too.
+        put(&mut s, "F1", 1.0, "f1");
+        s.execute("source.set", json!({"range": "G1", "links": [[link_json("g1")]]})).unwrap();
+        s.execute("home.mergeCells", json!({"range": "F1:G1"})).unwrap();
+        assert_eq!(locator(&s, "F1").as_deref(), Some("f1"));
+        assert_eq!(locator(&s, "G1"), None);
+    }
 }

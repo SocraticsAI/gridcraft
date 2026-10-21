@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Formatting: Home › Font, Alignment, Number, Styles, Cells › Format.
 
 use gridcraft_core::{CellRef, RangeRef};
@@ -576,6 +577,8 @@ fn merge(s: &mut Session, p: &Json, how: &str) -> Result<Json> {
                         let m = RangeRef::new(CellRef::new(row, r.start.col), CellRef::new(row, r.end.col));
                         if !m.is_single() {
                             sh.merges.push(m);
+                            // The emptied cells' source links go with their values; the row's anchor keeps its own.
+                            sh.sources.retain(|c, _| !m.contains(*c) || *c == m.start);
                             // As below: only the first value of each row survives.
                             let others: Vec<CellRef> = sh.cells.iter_range(m).map(|(c, _)| c).filter(|c| *c != m.start).collect();
                             for c in others {
@@ -595,6 +598,8 @@ fn merge(s: &mut Session, p: &Json, how: &str) -> Result<Json> {
                     }
                     // Only the upper-left value survives (Excel warns about this).
                     if r.count() <= 1_000_000 {
+                        // … and only its source link: the emptied cells lose theirs.
+                        sh.sources.retain(|c, _| !r.contains(*c) || *c == r.start);
                         let others: Vec<CellRef> = sh.cells.iter_range(*r).map(|(c, _)| c).filter(|c| *c != r.start).collect();
                         for c in others {
                             if let Some(mut cell) = sh.cells.get(c).cloned() {
