@@ -474,6 +474,9 @@ fn roundtrip_diff(wb: &Workbook) -> Result<(), String> {
             let first = first.unwrap_or_else(|| format!("{} formulas vs {}", fx.len(), fy.len()));
             return Err(format!("{}: formulas differ after reload: {first}", x.name));
         }
+        if x.sources != y.sources {
+            return Err(format!("{}: source links differ after reload: {} vs {}", x.name, x.sources.len(), y.sources.len()));
+        }
     }
     if wb.calc.mode == CalcMode::Automatic && !wb.calc.iterative {
         value_diff(wb, &back, "an XLSX save and reload").map_or(Ok(()), Err)?;
