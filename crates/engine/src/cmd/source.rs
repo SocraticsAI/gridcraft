@@ -214,4 +214,56 @@ mod tests {
         assert_eq!(locator(&s, "B2").as_deref(), Some("a"));
         assert_eq!(link_count(&s, "Sheet1"), 1);
     }
+
+    #[test]
+    fn links_follow_inserted_and_deleted_rows_and_columns() {
+        let mut s = s();
+        put(&mut s, "B2", 1.0, "b2");
+        s.execute("home.insertRows", json!({"rows": "1:1"})).unwrap();
+        assert_eq!(locator(&s, "B3").as_deref(), Some("b2"));
+        assert_eq!(locator(&s, "B2"), None);
+        s.execute("home.insertColumns", json!({"cols": "A:A"})).unwrap();
+        assert_eq!(locator(&s, "C3").as_deref(), Some("b2"));
+        s.execute("home.deleteRows", json!({"rows": "1:1"})).unwrap();
+        s.execute("home.deleteColumns", json!({"cols": "A:A"})).unwrap();
+        assert_eq!(locator(&s, "B2").as_deref(), Some("b2"));
+        s.execute("home.deleteRows", json!({"rows": "2:2"})).unwrap();
+        assert_eq!(link_count(&s, "Sheet1"), 0, "a deleted row takes its links");
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(locator(&s, "B2").as_deref(), Some("b2"));
+    }
+
+    #[test]
+    fn links_follow_inserted_and_deleted_cells_and_moved_columns() {
+        let mut s = s();
+        put(&mut s, "B2", 2.0, "b2");
+        put(&mut s, "B4", 4.0, "b4");
+        s.execute("home.insertCells", json!({"range": "B2", "shift": "down"})).unwrap();
+        assert_eq!(locator(&s, "B3").as_deref(), Some("b2"));
+        assert_eq!(locator(&s, "B5").as_deref(), Some("b4"));
+        assert_eq!(locator(&s, "B2"), None);
+        s.execute("home.deleteCells", json!({"range": "B3", "shift": "up"})).unwrap();
+        assert_eq!(locator(&s, "B3"), None);
+        assert_eq!(locator(&s, "B4").as_deref(), Some("b4"));
+        assert_eq!(link_count(&s, "Sheet1"), 1, "the deleted cell's link went with it");
+        s.execute("home.insertCells", json!({"range": "A4", "shift": "right"})).unwrap();
+        assert_eq!(locator(&s, "C4").as_deref(), Some("b4"));
+        // Move Columns: C becomes A.
+        s.execute("sheet.moveColumns", json!({"cols": "C:C", "before": 0})).unwrap();
+        assert_eq!(locator(&s, "A4").as_deref(), Some("b4"));
+        assert_eq!(link_count(&s, "Sheet1"), 1);
+    }
+
+    #[test]
+    fn links_move_down_when_a_headerless_table_is_inserted() {
+        let mut s = s();
+        put(&mut s, "B2", 1.0, "b2");
+        put(&mut s, "A1", 9.0, "outside");
+        s.execute("range.setValues", json!({"range": "B3", "values": [[2]]})).unwrap();
+        s.execute("insert.table", json!({"range": "B2:B3", "header": false})).unwrap();
+        assert_eq!(locator(&s, "B3").as_deref(), Some("b2"), "first data row moved down one row");
+        assert_eq!(locator(&s, "B2"), None);
+        assert_eq!(locator(&s, "A1").as_deref(), Some("outside"), "a link outside the table's columns stays");
+        assert_eq!(link_count(&s, "Sheet1"), 2);
+    }
 }
