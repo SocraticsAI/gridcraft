@@ -290,4 +290,161 @@ mod tests {
         assert_eq!(locator(&s, "A4"), None);
         assert_eq!(link_count(&s, "Sheet1"), 2);
     }
+    /// Writes a text value and its link on the active sheet.
+    fn put_text(s: &mut Session, cell: &str, text: &str, locator: &str) {
+        s.execute("range.setValues", json!({"range": cell, "values": [[text]]})).unwrap();
+        s.execute("source.set", json!({"range": cell, "links": [[link_json(locator)]]})).unwrap();
+    }
+
+    #[test]
+    fn copy_paste_copies_links_and_cut_paste_moves_them() {
+        let mut s = s();
+        put(&mut s, "B2", 5.0, "five");
+        put(&mut s, "D2", 9.0, "nine");
+        s.execute("edit.copy", json!({"range": "B2"})).unwrap();
+        s.execute("edit.paste", json!({"at": "C5"})).unwrap();
+        assert_eq!(locator(&s, "C5").as_deref(), Some("five"));
+        assert_eq!(locator(&s, "B2").as_deref(), Some("five"), "a copy leaves the original");
+        // Formats leave the destination's own link; values bring the copied one; a combined value has none.
+        s.execute("edit.pasteSpecial", json!({"what": "formats", "at": "D2"})).unwrap();
+        assert_eq!(locator(&s, "D2").as_deref(), Some("nine"));
+        s.execute("edit.pasteSpecial", json!({"what": "values", "at": "D2"})).unwrap();
+        assert_eq!(locator(&s, "D2").as_deref(), Some("five"));
+        s.execute("edit.pasteSpecial", json!({"what": "values", "operation": "add", "at": "D2"})).unwrap();
+        assert_eq!(locator(&s, "D2"), None);
+        // Pasting a cell without a link over a linked one removes the link.
+        s.execute("edit.copy", json!({"range": "A1"})).unwrap();
+        s.execute("edit.paste", json!({"at": "C5"})).unwrap();
+        assert_eq!(locator(&s, "C5"), None);
+        // Cut and paste (what dragging a selection does) moves the link: none stays behind.
+        s.execute("edit.cut", json!({"range": "B2"})).unwrap();
+        s.execute("edit.paste", json!({"at": "B3"})).unwrap();
+        assert_eq!(locator(&s, "B3").as_deref(), Some("five"));
+        assert_eq!(locator(&s, "B2"), None);
+        // … also to another sheet.
+        s.execute("edit.cut", json!({"range": "B3"})).unwrap();
+        s.execute("home.insertSheet", json!({"name": "Dest"})).unwrap();
+        s.execute("edit.paste", json!({"at": "E4"})).unwrap();
+        assert_eq!(locator_on(&s, "Dest", "E4").as_deref(), Some("five"));
+        assert_eq!(locator(&s, "B3"), None);
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(locator(&s, "B3").as_deref(), Some("five"));
+    }
+
+    #[test]
+    fn multi_area_copy_keeps_links() {
+        let mut s = s();
+        put(&mut s, "A1", 1.0, "one");
+        put(&mut s, "C1", 3.0, "three");
+        s.execute("edit.copy", json!({"range": "A1,C1"})).unwrap();
+        s.execute("edit.paste", json!({"at": "A5"})).unwrap();
+        assert_eq!(locator(&s, "A5").as_deref(), Some("one"));
+        assert_eq!(locator(&s, "B5").as_deref(), Some("three"));
+    }
+
+    #[test]
+    fn clearing_contents_drops_links_but_clearing_formats_keeps_them() {
+        let mut s = s();
+        for (c, l) in [("B2", "b2"), ("C2", "c2"), ("D2", "d2")] {
+            put(&mut s, c, 1.0, l);
+        }
+        s.execute("edit.clearFormats", json!({"range": "B2"})).unwrap();
+        assert_eq!(locator(&s, "B2").as_deref(), Some("b2"));
+        s.execute("edit.clearContents", json!({"range": "B2"})).unwrap();
+        assert_eq!(locator(&s, "B2"), None);
+        s.execute("edit.clearAll", json!({"range": "C2"})).unwrap();
+        assert_eq!(locator(&s, "C2"), None);
+        assert_eq!(locator(&s, "D2").as_deref(), Some("d2"));
+    }
+
+    #[test]
+    fn clear_sources_removes_only_the_links() {
+        let mut s = s();
+        put(&mut s, "B2", 1.0, "b2");
+        put(&mut s, "C2", 2.0, "c2");
+        // A link on a cell with no value, outside the used range, is still in the range.
+        s.execute("source.set", json!({"range": "H9", "links": [[link_json("h9")]]})).unwrap();
+        s.execute("edit.clearSources", json!({"range": "B2:H9"})).unwrap();
+        assert_eq!(link_count(&s, "Sheet1"), 0);
+        let v = |s: &Session, c: &str| s.doc().unwrap().wb.sheet(0).unwrap().value(CellRef::parse(c).unwrap());
+        assert_eq!(v(&s, "B2"), gridcraft_core::Value::Number(1.0), "the values stay");
+        assert_eq!(v(&s, "C2"), gridcraft_core::Value::Number(2.0));
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(locator(&s, "H9").as_deref(), Some("h9"));
+        // With no range it clears the selection, like the other Clear commands.
+        s.execute("selection.set", json!({"range": "C2"})).unwrap();
+        s.execute("edit.clearSources", json!({})).unwrap();
+        assert_eq!(locator(&s, "C2"), None);
+        assert_eq!(locator(&s, "B2").as_deref(), Some("b2"));
+        // Clear All reaches a link beyond the used range too.
+        s.execute("edit.clearAll", json!({"range": "H9"})).unwrap();
+        assert_eq!(locator(&s, "H9"), None);
+    }
+
+    #[test]
+    fn typing_a_different_value_drops_the_link_and_reentering_it_keeps_it() {
+        let mut s = s();
+        put(&mut s, "A1", 1.0, "a1");
+        put(&mut s, "A2", 2.0, "a2");
+        put_text(&mut s, "A3", "cash", "a3");
+        // F2 then Enter on an unchanged value.
+        s.execute("cell.set", json!({"cell": "A1", "input": "1"})).unwrap();
+        assert_eq!(locator(&s, "A1").as_deref(), Some("a1"), "re-entering the same value keeps the link");
+        s.execute("range.setValues", json!({"range": "A3", "values": [["cash"]]})).unwrap();
+        assert_eq!(locator(&s, "A3").as_deref(), Some("a3"));
+        s.execute("cell.set", json!({"cell": "A1", "input": "7"})).unwrap();
+        assert_eq!(locator(&s, "A1"), None, "a typed value is not the sourced one");
+        s.execute("cell.set", json!({"cell": "A2", "input": "=1+1"})).unwrap();
+        assert_eq!(locator(&s, "A2"), None, "a formula over a linked value, even an equal one");
+        s.execute("range.fill", json!({"range": "A3", "input": "bank"})).unwrap();
+        assert_eq!(locator(&s, "A3"), None, "range.fill (Ctrl+Enter)");
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(locator(&s, "A3").as_deref(), Some("a3"), "undo brings the link back");
+        // Pasted text and Fill Down over a linked cell.
+        s.execute("edit.paste", json!({"at": "A3", "text": "5"})).unwrap();
+        assert_eq!(locator(&s, "A3"), None, "pasted text");
+        put(&mut s, "B1", 7.0, "b1");
+        put(&mut s, "B2", 8.0, "b2");
+        s.execute("edit.fillDown", json!({"range": "B1:B2"})).unwrap();
+        assert_eq!(locator(&s, "B1").as_deref(), Some("b1"), "the fill source keeps its link");
+        assert_eq!(locator(&s, "B2"), None, "a filled cell neither keeps its own link nor copies one");
+    }
+
+    #[test]
+    fn autosum_text_to_columns_and_replace_over_a_linked_cell_drop_its_link() {
+        let mut s = s();
+        s.execute("range.setValues", json!({"range": "A1", "values": [[1], [2]]})).unwrap();
+        put(&mut s, "A3", 9.0, "a3");
+        // A block AutoSum writes its totals below the block, over A3.
+        s.execute("formulas.autoSum", json!({"range": "A1:A2"})).unwrap();
+        assert_eq!(locator(&s, "A3"), None, "AutoSum");
+        put_text(&mut s, "C1", "x,y", "c1");
+        s.execute("data.textToColumns", json!({"range": "C1", "delimiters": [","]})).unwrap();
+        assert_eq!(locator(&s, "C1"), None, "Text to Columns");
+        put(&mut s, "E1", 1.0, "e1");
+        put(&mut s, "E2", 31.0, "e2");
+        put(&mut s, "E3", 2.0, "e3");
+        s.execute("edit.replace", json!({"what": "1", "with": "6", "all": true})).unwrap();
+        assert_eq!(locator(&s, "E1"), None, "Replace");
+        assert_eq!(locator(&s, "E2"), None);
+        assert_eq!(locator(&s, "E3").as_deref(), Some("e3"), "a cell Replace didn't change keeps its link");
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(locator(&s, "E1").as_deref(), Some("e1"));
+        assert_eq!(locator(&s, "E2").as_deref(), Some("e2"));
+    }
+
+    #[test]
+    fn writing_a_value_then_linking_it_keeps_the_new_link() {
+        // The host's batch: write the value, then its link, as two commands in a row.
+        let mut s = s();
+        put(&mut s, "C1", 5.0, "old");
+        s.execute("range.setValues", json!({"range": "C1", "values": [[100]]})).unwrap();
+        assert_eq!(locator(&s, "C1"), None);
+        s.execute("source.set", json!({"range": "C1", "links": [[link_json("c1")]]})).unwrap();
+        assert_eq!(locator(&s, "C1").as_deref(), Some("c1"));
+        // Linking first and writing after drops it: the value isn't the sourced one.
+        s.execute("source.set", json!({"range": "C2", "links": [[link_json("c2")]]})).unwrap();
+        s.execute("range.setValues", json!({"range": "C2", "values": [[3]]})).unwrap();
+        assert_eq!(locator(&s, "C2"), None);
+    }
 }

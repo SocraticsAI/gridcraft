@@ -343,6 +343,7 @@ pub(crate) fn commit<R>(d: &mut DocState, f: impl FnOnce(&mut Ctx) -> Result<R>)
     if !structural {
         check_arrays(&d.wb, &wb)?;
     }
+    drop_overwritten_sources(&d.wb, &mut wb);
     if changed.len() <= 200_000 {
         fit_rows.extend(changed.iter().map(|(s, c)| (*s, c.row)));
     }
@@ -368,6 +369,37 @@ pub(crate) fn commit<R>(d: &mut DocState, f: impl FnOnce(&mut Ctx) -> Result<R>)
     d.wb = std::sync::Arc::new(wb);
     d.selection = sel;
     Ok(r)
+}
+
+/// Typing over a linked cell drops its link: the value is no longer the sourced one. Whatever
+/// command made the edit (typing, AutoSum, Text to Columns, Replace, a fill…), a link that sits at
+/// the same address, unchanged, before and after it goes when that cell's value or formula
+/// changed. A link the edit moved (paste, cut, sort, inserted or deleted cells) or set is new at
+/// its address and stays, so does one on a cell given the value it already had. Undo brings a
+/// dropped link back with the rest of the workbook. Sheets are matched by name, like
+/// [`check_protection`]; the work is per link, and none at all when no sheet had any.
+fn drop_overwritten_sources(old: &Workbook, new: &mut Workbook) {
+    for sh in old.sheets.iter().filter(|sh| !sh.sources.is_empty()) {
+        let Some(i) = new.sheet_index(&sh.name) else { continue };
+        let Some(after) = new.sheets.get(i) else { continue };
+        if std::sync::Arc::ptr_eq(sh, after) || after.sources.is_empty() {
+            continue;
+        }
+        let stale: Vec<CellRef> = sh
+            .sources
+            .iter()
+            .filter(|&(c, link)| after.sources.get(c) == Some(link) && !same_content(sh.cell(*c), after.cell(*c)))
+            .map(|(c, _)| *c)
+            .collect();
+        if stale.is_empty() {
+            continue;
+        }
+        if let Some(shm) = new.sheet_mut(i) {
+            for c in &stale {
+                shm.sources.remove(c);
+            }
+        }
+    }
 }
 
 /// Excel's message for an edit of a locked cell on a protected sheet.
