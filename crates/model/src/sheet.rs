@@ -1,5 +1,4 @@
 // Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
-// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Worksheets.
 
 use std::collections::BTreeMap;

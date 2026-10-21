@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Command-sequence fuzzing: reproducible random sequences of commands on the sample workbooks,
 //! with invariants checked as they run. Per-command tests (`every_command_survives_empty_params`)
 //! miss the bugs that need a sequence — insert rows under a spill, undo, sort, paste into a table —
@@ -784,6 +785,7 @@ const CURATED: &[(&str, usize)] = &[
     ("formulas.defineName", 2),
     ("formulas.deleteName", 1),
     ("edit.replace", 1),
+    ("source.set", 2),
 ];
 
 fn generate(rng: &mut Rng, s: &Session) -> Step {
@@ -928,6 +930,25 @@ fn curated_params(rng: &mut Rng, wb: &Workbook, id: &str) -> Json {
             None => json!({"name": "Nope"}),
         },
         "edit.replace" => json!({"what": rng.pick(&["North", "1", "A", "Sales"]), "with": rng.pick(&["South", "2", "B", ""]), "all": true}),
+        "source.set" => {
+            let r = near_range(rng);
+            let links: Vec<Json> = (0..r.height())
+                .map(|_| {
+                    Json::Array(
+                        (0..r.width())
+                            .map(|_| {
+                                if rng.chance(70) {
+                                    json!({"file": "Data Room/Cash/Statement.pdf", "locator": format!("Row {}", rng.int(1, 99)), "storeRow": format!("S!C{}", rng.int(1, 99))})
+                                } else {
+                                    Json::Null
+                                }
+                            })
+                            .collect(),
+                    )
+                })
+                .collect();
+            json!({"range": r.a1(), "links": links})
+        }
         _ => maybe_range(rng),
     }
 }

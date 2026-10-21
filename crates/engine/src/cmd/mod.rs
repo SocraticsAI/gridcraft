@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! The command registry. Ids follow Excel's ribbon (`home.bold`, `insert.chart`,
 //! `data.sortAscending`) plus primitive editing commands (`cell.set`, `selection.set`).
 
@@ -18,6 +19,7 @@ pub mod review;
 pub mod sheet;
 pub mod slicer;
 pub mod solver;
+pub mod source;
 pub mod spelling;
 pub mod view;
 pub mod whatif;
@@ -144,6 +146,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(forecast::specs());
         v.extend(analysis::specs());
         v.extend(print::specs());
+        v.extend(source::specs());
         v
     })
 }
