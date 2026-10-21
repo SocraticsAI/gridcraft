@@ -58,10 +58,16 @@ pub struct Chrome {
     /// The ribbon's File tab and the Backstage view it opens (also reached by keyboard and
     /// commands such as `ui.backstage`).
     pub file_tab: bool,
+    /// The ribbon's Automate tab and its dialogs (Macros, Command Palette, Agent Control, Action
+    /// Journal, About), however they are reached: Alt+F8, the VBA notice, `ui.ribbonTab`.
+    pub automate: bool,
 }
+
+/// The dialogs the Automate tab opens; [`Chrome::automate`] turns them off with it.
+pub const AUTOMATE_DIALOGS: [&str; 5] = ["macros", "commandSearch", "agents", "journal", "about"];
 
 impl Default for Chrome {
     fn default() -> Self {
-        Chrome { title_bar: true, file_tab: true }
+        Chrome { title_bar: true, file_tab: true, automate: true }
     }
 }

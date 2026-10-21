@@ -50,7 +50,7 @@ impl SheetApp {
             } else {
                 format!("This workbook contains VBA macros. {} keeps them when you save as .xlsm, but does not run them.", gridcraft_engine::core::brand::name())
             };
-            self.notice = Some(Notice { text, kind: NoticeKind::Warning, action: Some(("What this means".into(), "macros".into())) });
+            self.notice = Some(Notice { text, kind: NoticeKind::Warning, action: self.chrome.automate.then(|| ("What this means".into(), "macros".into())) });
         } else {
             let text = if msgs.len() == 1 {
                 msgs[0].to_string()

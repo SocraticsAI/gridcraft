@@ -134,7 +134,9 @@ impl SheetApp {
             "ui.printSettings" => printing::settings(&mut self.printing, p, self.services.printers.as_ref()),
             "ui.printSubmit" => self.submit_print(p.clone()),
             "ui.ribbonTab" => {
-                self.ui.ribbon_tab = p.get("tab").and_then(Json::as_str).unwrap_or("Home").to_string();
+                let tab = p.get("tab").and_then(Json::as_str).unwrap_or("Home");
+                let tab = if tab == "Automate" && !self.chrome.automate { "Home" } else { tab };
+                self.ui.ribbon_tab = tab.to_string();
                 Ok(Json::Null)
             }
             "view.collapseRibbon" => {
@@ -280,6 +282,9 @@ impl SheetApp {
     }
 
     pub fn open_dialog(&mut self, name: &str, params: Json) {
+        if !self.chrome.automate && crate::AUTOMATE_DIALOGS.contains(&name) {
+            return;
+        }
         if let Err(e) = self.commit_text_box_edit() {
             self.message = Some(("Text Box".into(), clean_error(&e)));
             return;
