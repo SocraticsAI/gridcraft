@@ -266,4 +266,28 @@ mod tests {
         assert_eq!(locator(&s, "A1").as_deref(), Some("outside"), "a link outside the table's columns stays");
         assert_eq!(link_count(&s, "Sheet1"), 2);
     }
+
+    #[test]
+    fn links_move_with_sorted_rows() {
+        let mut s = s();
+        s.execute("range.setValues", json!({"range": "A1", "values": [["Rank", "Amount"], [2, 200], [1, 100]]})).unwrap();
+        s.execute("source.set", json!({"range": "B2", "links": [[link_json("two hundred")]]})).unwrap();
+        s.execute("data.sort", json!({"range": "A1:B3", "header": true, "keys": [{"column": "A", "order": "asc"}]})).unwrap();
+        assert_eq!(locator(&s, "B2"), None, "the unlinked row moved up");
+        assert_eq!(locator(&s, "B3").as_deref(), Some("two hundred"));
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(locator(&s, "B2").as_deref(), Some("two hundred"));
+    }
+
+    #[test]
+    fn remove_duplicates_keeps_the_surviving_rows_links() {
+        let mut s = s();
+        s.execute("range.setValues", json!({"range": "A1", "values": [["Amount"], [5], [5], [7]]})).unwrap();
+        s.execute("source.set", json!({"range": "A2:A4", "links": [[link_json("first")], [link_json("second")], [link_json("third")]]})).unwrap();
+        s.execute("data.removeDuplicates", json!({"range": "A1:A4", "header": true})).unwrap();
+        assert_eq!(locator(&s, "A2").as_deref(), Some("first"));
+        assert_eq!(locator(&s, "A3").as_deref(), Some("third"));
+        assert_eq!(locator(&s, "A4"), None);
+        assert_eq!(link_count(&s, "Sheet1"), 2);
+    }
 }
