@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Sheet features beyond cells: tables, conditional formatting, data validation, comments,
 //! hyperlinks, charts, images, autofilter, print settings.
 
@@ -335,6 +336,20 @@ pub struct Hyperlink {
     /// the file, not a `location`. A bare file name can't be told from a defined name by its text.
     #[serde(default)]
     pub external: bool,
+}
+
+/// Where a hard-coded value came from: a document in the engagement's data room and the place
+/// in it. A formula has none of its own (it is traced through its references). Moves with its
+/// cell like a note; typing over the cell drops it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceLink {
+    /// The source document, relative to the data room root.
+    pub file: String,
+    /// Where in the document: `GL Detail!C16102`, or `ACCOUNT SUMMARY / Beginning Balance`.
+    pub locator: String,
+    /// The lineage store row the value was read from (for audit; opening the source doesn't need it).
+    pub store_row: String,
 }
 
 // ---------------------------------------------------------------- drawing objects
