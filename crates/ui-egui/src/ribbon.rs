@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, and adds the `Chrome::automate` switch. See MODIFICATIONS.md.
 //! Title bar (Quick Access Toolbar), ribbon tabs and ribbon groups, and keyboard shortcuts.
 
 use egui::{Align2, Color32, Key, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
@@ -180,7 +180,7 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                     if app.chrome.file_tab {
                         file_menu(app, ui);
                     }
-                    let mut tabs: Vec<&str> = TABS.to_vec();
+                    let mut tabs: Vec<&str> = TABS.iter().copied().filter(|tab| app.chrome.automate || *tab != "Automate").collect();
                     let ctx_tabs = contextual_tabs(app);
                     tabs.extend(ctx_tabs.iter());
                     for tab in tabs {
@@ -245,7 +245,7 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                             "Data" => data(app, ui),
                             "Review" => review(app, ui),
                             "View" => view(app, ui),
-                            "Automate" => automate(app, ui),
+                            "Automate" if app.chrome.automate => automate(app, ui),
                             "Table Design" => table_design(app, ui),
                             "Chart Design" => chart_design(app, ui),
                             crate::paper_view::TAB => crate::paper_view::ribbon_tab(app, ui),

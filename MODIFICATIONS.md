@@ -15,6 +15,12 @@ carries a notice on its first line.
    `src/io.rs`, `src/lib.rs`, `src/tests.rs`, the new `tests/host_brand.rs`), `crates/pdf` (`Cargo.toml`,
    `src/lib.rs`), `crates/ui-egui` (`src/{backstage,dialogs,formula_bar,grid,lib,ribbon}.rs`) and `crates/xlsx`
    (`src/pivot.rs`, `src/write.rs`, `src/xls/formula.rs`, `src/xls/mod.rs`). Not proposed upstream.
+2. **Automate switch for the host** (2026). `Chrome` gains an `automate` field, on by default. An embedding
+   host can turn it off to hide the ribbon's Automate tab and refuse its dialogs (Macros, Command Palette,
+   Agent Control, Action Journal, About), however they are reached: Alt+F8, the VBA notice's link,
+   `ui.ribbonTab`. Files: `crates/ui-egui/src/lib.rs`, `crates/ui-egui/src/ribbon.rs`, the new
+   `crates/ui-egui/tests/host_automate.rs`, and `crates/ui-egui/tests/host_chrome.rs` (its `Chrome` literals
+   take the new field from the default). Not proposed upstream yet.
 
 An earlier change, the host chrome switch, was merged upstream as
 [storytold/gridcraft#1877](https://github.com/storytold/gridcraft/pull/1877) and is in GridCraft from v0.10.0.

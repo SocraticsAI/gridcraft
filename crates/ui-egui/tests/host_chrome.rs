@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: the `Chrome` literals take the new `automate` field from its default. See MODIFICATIONS.md.
 //! A host that embeds the sheet in its own window can turn off the app's title bar and File tab.
 
 use egui_kittest::kittest::Queryable as _;
@@ -31,7 +32,7 @@ fn the_title_bar_and_file_tab_are_drawn_by_default() {
 #[test]
 fn a_host_can_leave_out_the_title_bar_and_the_file_tab() {
     let full = harness(Chrome::default());
-    let h = harness(Chrome { title_bar: false, file_tab: false });
+    let h = harness(Chrome { title_bar: false, file_tab: false, ..Chrome::default() });
     assert!(h.query_by_label("AutoSave").is_none(), "no title bar");
     assert!(h.query_by_label("File").is_none(), "no File tab");
     // The ribbon tabs are painted text, so measure the move with the first ribbon control.
@@ -43,7 +44,7 @@ fn a_host_can_leave_out_the_title_bar_and_the_file_tab() {
 
 #[test]
 fn without_the_file_tab_the_backstage_view_never_opens() {
-    let mut h = harness(Chrome { title_bar: true, file_tab: false });
+    let mut h = harness(Chrome { title_bar: true, file_tab: false, ..Chrome::default() });
     h.state_mut().open_backstage(Page::Home);
     h.run_steps(3);
     assert!(h.state().backstage.is_none(), "opening Backstage directly is ignored");

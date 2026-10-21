@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, and adds the `Chrome::automate` switch. See MODIFICATIONS.md.
 //! GridCraft's egui frontend: an Excel-style window (title bar with Quick Access Toolbar,
 //! ribbon, formula bar, grid, sheet tabs, status bar) over `gridcraft-engine`.
 //!
@@ -222,11 +222,17 @@ pub struct Chrome {
     /// The ribbon's File tab and the Backstage view it opens (also reached by keyboard and
     /// commands such as `ui.backstage`).
     pub file_tab: bool,
+    /// The ribbon's Automate tab and its dialogs (Macros, Command Palette, Agent Control, Action
+    /// Journal, About), however they are reached: Alt+F8, the VBA notice, `ui.ribbonTab`.
+    pub automate: bool,
 }
+
+/// The dialogs the Automate tab opens; [`Chrome::automate`] turns them off with it.
+pub const AUTOMATE_DIALOGS: [&str; 5] = ["macros", "commandSearch", "agents", "journal", "about"];
 
 impl Default for Chrome {
     fn default() -> Self {
-        Chrome { title_bar: true, file_tab: true }
+        Chrome { title_bar: true, file_tab: true, automate: true }
     }
 }
 
@@ -600,7 +606,9 @@ impl SheetApp {
             "ui.printSettings" => printing::settings(&mut self.printing, p, self.services.printers.as_ref()),
             "ui.printSubmit" => self.submit_print(p.clone()),
             "ui.ribbonTab" => {
-                self.ui.ribbon_tab = p.get("tab").and_then(Json::as_str).unwrap_or("Home").to_string();
+                let tab = p.get("tab").and_then(Json::as_str).unwrap_or("Home");
+                let tab = if tab == "Automate" && !self.chrome.automate { "Home" } else { tab };
+                self.ui.ribbon_tab = tab.to_string();
                 Ok(Json::Null)
             }
             "view.collapseRibbon" => {
@@ -733,6 +741,9 @@ impl SheetApp {
     }
 
     pub fn open_dialog(&mut self, name: &str, params: Json) {
+        if !self.chrome.automate && AUTOMATE_DIALOGS.contains(&name) {
+            return;
+        }
         if let Err(e) = self.commit_text_box_edit() {
             self.message = Some(("Text Box".into(), clean_error(&e)));
             return;
@@ -833,7 +844,7 @@ impl SheetApp {
                     gridcraft_engine::core::brand::name()
                 ),
                 kind: NoticeKind::Warning,
-                action: Some(("What this means".into(), "macros".into())),
+                action: self.chrome.automate.then(|| ("What this means".into(), "macros".into())),
             });
         } else {
             let text = if msgs.len() == 1 {
