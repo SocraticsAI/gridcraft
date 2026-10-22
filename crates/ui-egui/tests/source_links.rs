@@ -1,5 +1,6 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
-//! Cell source markers: hovering one names the value's source; clicking one tells the host.
+//! Cell source markers, on hard-coded values only: hovering one names the value's source; clicking
+//! one tells the host. Formulas have none.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -65,17 +66,16 @@ fn tip_shown(h: &Harness) -> Option<String> {
 }
 
 #[test]
-fn tips_name_the_source_or_count_the_sources() {
+fn tips_name_the_source_of_hard_coded_values_only() {
     let s = session();
     let wb = &s.doc().unwrap().wb;
     let tip = |a: &str| source_marks::tip(wb, 0, CellRef::parse(a).unwrap());
-    let statement = "Heritage Trust Bank Statement September 2019 · Beginning Balance";
-    assert_eq!(tip("B2").as_deref(), Some(statement));
+    assert_eq!(tip("B2").as_deref(), Some("Heritage Trust Bank Statement September 2019 · Beginning Balance"));
     assert_eq!(tip("B3").as_deref(), Some("No source for this value"));
-    assert_eq!(tip("C2").as_deref(), Some(statement), "a formula with one source names it");
-    assert_eq!(tip("C3").as_deref(), Some("1 input has no source"));
-    assert_eq!(tip("C4").as_deref(), Some("From 2 sources"));
-    assert_eq!(tip("C5").as_deref(), Some("Can't be traced to a source: it uses INDIRECT or OFFSET"));
+    assert_eq!(tip("D2").as_deref(), Some("GL Detail · GL Detail!C16102"));
+    for formula in ["C2", "C3", "C4", "C5"] {
+        assert_eq!(tip(formula), None, "{formula} is a formula");
+    }
     let ledger = SourceLink { file: "Data Room/GL/GL_Detail.xlsx".into(), locator: "GL Detail!C16102".into(), store_row: String::new() };
     assert_eq!(source_marks::label(&ledger), "GL Detail · GL Detail!C16102");
 }
@@ -91,6 +91,15 @@ fn hovering_a_marker_names_its_source() {
     h.input_mut().events.push(Event::PointerMoved(at));
     h.run_steps(2);
     assert_eq!(tip_shown(&h).as_deref(), Some("No source for this value"));
+}
+
+#[test]
+fn a_formula_over_linked_values_has_no_marker_to_hover() {
+    let mut h = harness(session(), Services::default());
+    let at = marker_center(&h, "C2");
+    h.input_mut().events.push(Event::PointerMoved(at));
+    h.run_steps(2);
+    assert_eq!(h.state().grid.source_tip, None);
 }
 
 #[test]
@@ -133,13 +142,18 @@ fn active(h: &Harness) -> String {
 #[test]
 fn clicking_a_marker_selects_the_cell_and_tells_the_host() {
     let (mut h, clicks) = with_clicks();
-    let at = marker_center(&h, "C4");
+    let at = marker_center(&h, "D2");
     click(&mut h, at);
-    assert_eq!(active(&h), "C4");
-    assert_eq!(clicks.borrow().as_slice(), [("Sheet1".to_string(), "C4".to_string())]);
+    assert_eq!(active(&h), "D2");
+    assert_eq!(clicks.borrow().as_slice(), [("Sheet1".to_string(), "D2".to_string())]);
     let at = marker_center(&h, "B3");
     click(&mut h, at);
     assert_eq!(clicks.borrow().last(), Some(&("Sheet1".to_string(), "B3".to_string())), "an unsourced marker is reported too");
+    // A formula's corner is no marker: the click only selects. (C4's corner holds B3's fill handle.)
+    let at = marker_center(&h, "C5");
+    click(&mut h, at);
+    assert_eq!(active(&h), "C5");
+    assert_eq!(clicks.borrow().len(), 2);
 }
 
 #[test]
@@ -196,13 +210,11 @@ fn markers_are_painted_in_the_top_left_corner_in_normal_view_only() {
     let t = Tokens::light();
     let blue = triangles(&h, t.sourced_mark);
     let amber = triangles(&h, t.unsourced_mark);
-    for cell in ["B2", "D2", "C2", "C4"] {
+    for cell in ["B2", "D2"] {
         assert!(blue.contains(&marker(&h, cell).min), "{cell} has a sourced marker: {blue:?}");
     }
-    for cell in ["B3", "C3", "C5"] {
-        assert!(amber.contains(&marker(&h, cell).min), "{cell} has an unsourced marker: {amber:?}");
-    }
-    assert_eq!((blue.len(), amber.len()), (4, 3), "only cells with a marker state get one");
+    assert_eq!(amber, [marker(&h, "B3").min], "the unlinked number has an unsourced marker");
+    assert_eq!(blue.len(), 2, "formulas (C2:C5) have no marker: {blue:?}");
     h.state_mut().run("view.pageLayout", json!({})).unwrap();
     h.run_steps(4);
     assert!(triangles(&h, t.sourced_mark).is_empty() && triangles(&h, t.unsourced_mark).is_empty(), "no markers in Page Layout view");
@@ -226,7 +238,7 @@ fn page_layout_view_has_no_marker_to_hover() {
 
 /// 50,000 linked values (A1:E10000), a 5,000-formula running total over them (G1:G5000) and one
 /// SUM over them all: how long the first frame after an edit takes, at the top and at the bottom
-/// of the running total. Run by hand: `cargo test --release -p gridcraft-ui-egui --test
+/// of the running total (whose formulas have no markers). Run by hand: `cargo test --release -p gridcraft-ui-egui --test
 /// source_links -- --ignored --nocapture`.
 #[test]
 #[ignore = "timing, run by hand"]

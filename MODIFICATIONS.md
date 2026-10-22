@@ -28,8 +28,10 @@ carries a notice on its first line.
    replacing over a cell, clearing its contents and merging it into a neighbour drop its link. They are
    saved in the `.xlsx` as a custom XML part (namespace `urn:socratics:sources:1`) and read back. New
    commands `source.set`, `source.get`, `source.clear` and `source.trace` (a formula traced through its
-   references, across sheets, 3-D references, names and tables, to linked values). A marker in a cell's
-   top-left corner shows whether its value is traced to sources, with a tooltip; clicking it raises
+   references, across sheets, 3-D references, names and tables, to linked values). Only hard-coded
+   values carry a marker in their top-left corner: a linked value is shown as sourced, an unlinked number
+   as unsourced, with a tooltip naming the source or saying there is none; formulas (and spilled values)
+   are traced by `source.trace` but show no marker. Clicking a marker raises
    `UiRequest::SourceClick`, which goes to the host's `Services::source_click`. The ribbon gains Clear
    Sources, and the marker colours are theme tokens. Files: `crates/model`
    (`src/{cellmap,features,sheet,store}.rs`), `crates/engine` (`src/lib.rs`, the new `src/source_state.rs`,

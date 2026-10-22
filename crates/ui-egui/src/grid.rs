@@ -3105,7 +3105,7 @@ pub(crate) fn paint_overlays(
             ui.label(tip);
         });
     }
-    // Source marker tooltip (traced once per document version and cell, never while painting cells).
+    // Source marker tooltip (worked out once per document version and cell, never while painting cells).
     let marker = match ui.ctx().pointer_hover_pos() {
         Some(pos) if app.editor.is_none() && app.grid.drag == Drag::None && ui.ctx().layer_id_at(pos) == Some(ui.layer_id()) => {
             app.session.active().and_then(|d| crate::source_marks::hit(geo, d, si, sh, geo.mirror_pos(pos)))

@@ -1,13 +1,14 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
-//! Cell source markers: a small triangle in the top-left corner of a cell whose value is traced to
-//! source documents (`Tokens::sourced_mark`) or isn't (`Tokens::unsourced_mark`), its tooltip, and
-//! where a click on it lands. Normal view only: Page Layout view shows no markers.
+//! Cell source markers: a small triangle in the top-left corner of a hard-coded value that has a
+//! source link (`Tokens::sourced_mark`) or of a hard-coded number that hasn't
+//! (`Tokens::unsourced_mark`), its tooltip, and where a click on it lands. Formulas have none.
+//! Normal view only: Page Layout view shows no markers.
 
 use egui::{Painter, Pos2, Rect, Stroke, pos2, vec2};
 use gridcraft_engine::DocState;
 use gridcraft_engine::core::{CellRef, RangeRef};
 use gridcraft_engine::model::{Sheet, SourceLink, Workbook};
-use gridcraft_engine::source_state::{SourceState, source_state, source_states_in, trace};
+use gridcraft_engine::source_state::{SourceState, source_state, source_states_in};
 
 use crate::grid::Geo;
 use crate::theme::Tokens;
@@ -34,8 +35,7 @@ pub fn marker_rect(geo: &Geo, sh: &Sheet, c: CellRef) -> Option<Rect> {
     Some(Rect::from_min_size(r.left_top(), vec2(s, s)))
 }
 
-/// Paints the markers of one pane (rows × cols). States come from the engine's cache; nothing is
-/// traced here.
+/// Paints the markers of one pane (rows × cols). States are read from the cells; nothing is traced.
 #[allow(clippy::too_many_arguments)]
 pub fn paint_quadrant(d: &DocState, p: &Painter, geo: &Geo, si: usize, sh: &Sheet, rows: (u32, u32), cols: (u32, u32), t: &Tokens) {
     if geo.paper.is_some() || rows.0 > rows.1 || cols.0 > cols.1 {
@@ -43,7 +43,7 @@ pub fn paint_quadrant(d: &DocState, p: &Painter, geo: &Geo, si: usize, sh: &Shee
     }
     let range = RangeRef::new(CellRef::new(rows.0, cols.0), CellRef::new(rows.1, cols.1));
     let s = marker_size(geo.z);
-    for (c, state) in source_states_in(d, si, range) {
+    for (c, state) in source_states_in(&d.wb, si, range) {
         if sh.row_height(c.row) == 0.0 || sh.col_width(c.col) == 0.0 {
             continue;
         }
@@ -63,7 +63,7 @@ pub fn hit(geo: &Geo, d: &DocState, si: usize, sh: &Sheet, p: Pos2) -> Option<Ce
     }
     let c = geo.cell_at(sh, p);
     let anchor = sh.merges.iter().find(|m| m.contains(c)).map_or(c, |m| m.start);
-    source_state(d, si, anchor)?;
+    source_state(&d.wb, si, anchor)?;
     marker_rect(geo, sh, anchor)?.contains(p).then_some(anchor)
 }
 
@@ -76,25 +76,11 @@ pub fn label(link: &SourceLink) -> String {
     if place.is_empty() { stem } else { format!("{stem} · {place}") }
 }
 
-/// The tooltip of the marker of `c`.
+/// The tooltip of the marker of `c`: its source, or that it has none. `None` for a cell without a
+/// marker (a formula, text without a link).
 pub fn tip(wb: &Workbook, si: usize, c: CellRef) -> Option<String> {
-    let t = trace(wb, si, c);
-    let is_formula = wb.sheet(si).and_then(|sh| sh.cell(c)).is_some_and(|x| x.formula.is_some());
-    if t.untraceable {
-        return Some("Can't be traced to a source: it uses INDIRECT or OFFSET".into());
-    }
-    if !t.unsourced.is_empty() {
-        return Some(if !is_formula {
-            "No source for this value".into()
-        } else if t.unsourced.len() == 1 {
-            "1 input has no source".into()
-        } else {
-            format!("{} inputs have no source", t.unsourced.len())
-        });
-    }
-    match t.links.as_slice() {
-        [] => None,
-        [one] => Some(label(&one.link)),
-        many => Some(format!("From {} sources", many.len())),
+    match source_state(wb, si, c)? {
+        SourceState::Sourced => wb.sheet(si)?.sources.get(&c).map(label),
+        SourceState::Unsourced => Some("No source for this value".into()),
     }
 }
