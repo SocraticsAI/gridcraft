@@ -159,10 +159,23 @@ fn clicking_elsewhere_in_the_cell_only_selects_it() {
 fn clicking_the_marker_of_a_hyperlinked_cell_does_not_follow_the_link() {
     let (mut h, clicks) = with_clicks();
     h.state_mut().session.execute("insert.link", json!({"cell": "B2", "target": "Sheet1!E9"})).unwrap();
-    let at = marker_center(&h, "B2");
+    // Past the corner A1's fill handle covers, which wins over the marker.
+    let at = marker(&h, "B2").min + egui::vec2(6.5, 6.5);
     click(&mut h, at);
     assert_eq!(clicks.borrow().len(), 1);
     assert_eq!(active(&h), "B2", "following the internal link would have gone to E9");
+}
+
+#[test]
+fn the_fill_handle_wins_over_a_diagonal_neighbours_marker() {
+    let (mut h, clicks) = with_clicks();
+    h.state_mut().session.execute("selection.set", json!({"cell": "A1"})).unwrap();
+    h.run_steps(2);
+    // A1's fill handle overlaps B2's marker (B2 is sourced).
+    let at = marker(&h, "B2").min + egui::vec2(3.0, 3.0);
+    click(&mut h, at);
+    assert_eq!(active(&h), "A1", "the click grabbed the handle instead of selecting B2");
+    assert!(clicks.borrow().is_empty());
 }
 
 /// The top-left corners of the painted triangles of colour `color`.

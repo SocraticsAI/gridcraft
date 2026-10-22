@@ -2128,6 +2128,7 @@ fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Response, geo: &
         // source; a click elsewhere in the cell selects as usual.
         if primary_clicked
             && !mods.any()
+            && !on_handle(p)
             && let Some(at) = app.session.active().and_then(|d| crate::source_marks::hit(geo, d, wb.active_sheet, sh, p))
         {
             let _ = app.session.run("selection.set", json!({"cell": at.a1()}));
