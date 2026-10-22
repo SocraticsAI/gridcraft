@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and cell source links. See MODIFICATIONS.md.
 //! The GridCraft engine façade.
 //!
 //! Every user-visible action is a command with a stable id (`cell.set`, `home.bold`,
@@ -21,6 +21,7 @@ pub mod pivot;
 pub mod pivot_calc;
 pub mod sample;
 pub mod selection;
+pub mod source_state;
 pub mod tables;
 
 use std::sync::Arc;

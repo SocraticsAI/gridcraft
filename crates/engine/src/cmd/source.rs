@@ -26,6 +26,15 @@ pub fn specs() -> Vec<CommandSpec> {
         ),
         cmd!(query "source.get", "Cell Source", [], None, "{sheet?, cell: \"B2\"} → {link: {file, locator, storeRow} | null}", has_doc, get_link),
         cmd!("source.clear", "Clear Cell Sources", [], None, "{sheet?, range: \"A1:C3\"} → {cleared}", has_doc, clear_links),
+        cmd!(
+            query "source.trace",
+            "Trace Cell Sources",
+            [],
+            None,
+            "{sheet?, cell: \"B2\"} → {links: [{sheet, cell, link}], unsourced: [{sheet, cell}], untraceable, truncated}",
+            has_doc,
+            trace_links
+        ),
     ]
 }
 
@@ -113,8 +122,27 @@ fn clear_links(s: &mut Session, p: &Json) -> Result<Json> {
     })
 }
 
+fn trace_links(s: &mut Session, p: &Json) -> Result<Json> {
+    let sheet = target_sheet(s, p)?;
+    let at = match cell_param_on(s, p, "cell", sheet)? {
+        Some(c) => c,
+        None => s.doc()?.selection.active,
+    };
+    let d = s.doc()?;
+    let t = crate::source_state::trace(&d.wb, sheet, at);
+    let name = |si: usize| d.wb.sheet(si).map(|sh| sh.name.clone()).unwrap_or_default();
+    Ok(json!({
+        "links": t.links.iter().map(|l| json!({"sheet": name(l.sheet), "cell": l.cell.a1(), "link": l.link})).collect::<Vec<_>>(),
+        "unsourced": t.unsourced.iter().map(|(si, c)| json!({"sheet": name(*si), "cell": c.a1()})).collect::<Vec<_>>(),
+        "untraceable": t.untraceable,
+        "truncated": t.truncated,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use gridcraft_core::CellRef;
     use serde_json::{Value as Json, json};
 
@@ -185,7 +213,7 @@ mod tests {
     #[test]
     fn source_commands_survive_bad_params() {
         let mut s = s();
-        for id in ["source.set", "source.get", "source.clear"] {
+        for id in ["source.set", "source.get", "source.clear", "source.trace"] {
             for params in [
                 json!({}),
                 json!([1, 2]),
@@ -501,5 +529,162 @@ mod tests {
         // Whole columns: one pass over the links, not one per row.
         s.execute("home.mergeAcross", json!({"range": "I:J"})).unwrap();
         assert_eq!(locator(&s, "B6").as_deref(), Some("b6"));
+    }
+
+    fn trace(s: &mut Session, params: Json) -> Json {
+        s.execute("source.trace", params).unwrap()
+    }
+
+    fn cells(v: &Json, key: &str) -> Vec<String> {
+        let mut out: Vec<String> =
+            v[key].as_array().unwrap().iter().map(|x| format!("{}!{}", x["sheet"].as_str().unwrap(), x["cell"].as_str().unwrap())).collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn a_hard_coded_value_traces_to_its_own_link_or_to_nothing() {
+        let mut s = s();
+        put(&mut s, "B2", 1318609.0, "opening");
+        s.execute("range.setValues", json!({"range": "B3", "values": [[7], ["text"]]})).unwrap();
+        let t = trace(&mut s, json!({"cell": "B2"}));
+        assert_eq!(cells(&t, "links"), ["Sheet1!B2"]);
+        assert_eq!(t["links"][0]["link"]["locator"], "opening");
+        assert_eq!(t["links"][0]["link"]["storeRow"], "row-opening");
+        assert_eq!((t["untraceable"].as_bool(), t["truncated"].as_bool()), (Some(false), Some(false)));
+        assert_eq!(cells(&trace(&mut s, json!({"cell": "B3"})), "unsourced"), ["Sheet1!B3"]);
+        let text = trace(&mut s, json!({"cell": "B4"}));
+        assert!(cells(&text, "links").is_empty() && cells(&text, "unsourced").is_empty());
+    }
+
+    #[test]
+    fn a_formula_traces_across_sheets_and_3d_references() {
+        let mut s = s();
+        put(&mut s, "B2", 100.0, "jan");
+        s.execute("range.setValues", json!({"range": "B3", "values": [[5]]})).unwrap();
+        s.execute("home.insertSheet", json!({"name": "Feb"})).unwrap();
+        s.execute("range.setValues", json!({"range": "Feb!B2", "values": [[200]]})).unwrap();
+        s.execute("source.set", json!({"sheet": "Feb", "range": "B2", "links": [[link_json("feb")]]})).unwrap();
+        s.execute("cell.set", json!({"sheet": "Feb", "cell": "C1", "input": "=SUM(Sheet1:Feb!B2)"})).unwrap();
+        s.execute("cell.set", json!({"sheet": "Feb", "cell": "C2", "input": "=Sheet1!B2+Sheet1!B3"})).unwrap();
+        s.execute("cell.set", json!({"sheet": "Feb", "cell": "C3", "input": "=C1+C2"})).unwrap();
+        let t = trace(&mut s, json!({"sheet": "Feb", "cell": "C1"}));
+        assert_eq!(cells(&t, "links"), ["Feb!B2", "Sheet1!B2"]);
+        let t = trace(&mut s, json!({"sheet": "Feb", "cell": "C2"}));
+        assert_eq!(cells(&t, "links"), ["Sheet1!B2"]);
+        assert_eq!(cells(&t, "unsourced"), ["Sheet1!B3"]);
+        // Through formulas, each source once.
+        let t = trace(&mut s, json!({"sheet": "Feb", "cell": "C3"}));
+        assert_eq!(cells(&t, "links"), ["Feb!B2", "Sheet1!B2"]);
+        assert_eq!(cells(&t, "unsourced"), ["Sheet1!B3"]);
+    }
+
+    #[test]
+    fn defined_names_and_table_references_are_resolved() {
+        let mut s = s();
+        put(&mut s, "B2", 100.0, "opening");
+        s.execute("formulas.defineName", json!({"name": "Opening", "refersTo": "=Sheet1!$B$2"})).unwrap();
+        s.execute("formulas.defineName", json!({"name": "Twice", "refersTo": "=Opening*2"})).unwrap();
+        s.execute("cell.set", json!({"cell": "E1", "input": "=Opening*2"})).unwrap();
+        s.execute("cell.set", json!({"cell": "E2", "input": "=Twice+1"})).unwrap();
+        assert_eq!(cells(&trace(&mut s, json!({"cell": "E1"})), "links"), ["Sheet1!B2"]);
+        assert_eq!(cells(&trace(&mut s, json!({"cell": "E2"})), "links"), ["Sheet1!B2"]);
+        s.execute("range.setValues", json!({"range": "A10", "values": [["Item", "Amount"], ["Rent", 1200], ["Fees", 300]]})).unwrap();
+        s.execute("source.set", json!({"range": "B11:B12", "links": [[link_json("rent")], [link_json("fees")]]})).unwrap();
+        s.execute("insert.table", json!({"range": "A10:B12", "header": true, "name": "Costs"})).unwrap();
+        s.execute("cell.set", json!({"cell": "D10", "input": "=SUM(Costs[Amount])"})).unwrap();
+        s.execute("cell.set", json!({"cell": "D11", "input": "=ROWS(Costs)+SUM(Costs)"})).unwrap();
+        assert_eq!(cells(&trace(&mut s, json!({"cell": "D10"})), "links"), ["Sheet1!B11", "Sheet1!B12"]);
+        assert_eq!(cells(&trace(&mut s, json!({"cell": "D11"})), "links"), ["Sheet1!B11", "Sheet1!B12"]);
+    }
+
+    #[test]
+    #[allow(clippy::disallowed_methods)] // a native-only timing test: the clock is read off wasm
+    fn names_that_fan_out_are_expanded_once_each() {
+        // N_k = N_k+1 four times over: without a visited set, N_1 would expand 4^15 copies of N_16.
+        // (`N1` itself is a cell address, so the names carry an underscore.) The evaluator has no such
+        // guard, so `=N_1` goes into the workbook directly, uncalculated: `cell.set` would compute it.
+        let mut s = s();
+        put(&mut s, "B2", 1.0, "b2");
+        for k in 1..16 {
+            let next = format!("N_{}", k + 1);
+            s.execute("formulas.defineName", json!({"name": format!("N_{k}"), "refersTo": format!("={next}+{next}+{next}+{next}")})).unwrap();
+        }
+        s.execute("formulas.defineName", json!({"name": "N_16", "refersTo": "=Sheet1!$B$2+Sheet1!$B$3"})).unwrap();
+        s.execute("range.setValues", json!({"range": "B3", "values": [[2]]})).unwrap();
+        let formula = gridcraft_model::Cell { formula: Some(Arc::new(gridcraft_model::Formula::new("=N_1"))), ..Default::default() };
+        let wb = Arc::make_mut(&mut s.doc_mut().unwrap().wb);
+        wb.sheet_mut(0).unwrap().set_cell(CellRef::parse("E1").unwrap(), formula);
+        let started = std::time::Instant::now();
+        let t = trace(&mut s, json!({"cell": "E1"}));
+        assert!(started.elapsed() < std::time::Duration::from_secs(5), "took {:?}", started.elapsed());
+        assert_eq!(cells(&t, "links"), ["Sheet1!B2"]);
+        assert_eq!(cells(&t, "unsourced"), ["Sheet1!B3"]);
+        assert_eq!((t["untraceable"].as_bool(), t["truncated"].as_bool()), (Some(false), Some(false)));
+    }
+
+    #[test]
+    fn names_nested_past_the_depth_limit_are_untraceable() {
+        let mut s = s();
+        put(&mut s, "B2", 1.0, "b2");
+        for k in 1..=20 {
+            s.execute("formulas.defineName", json!({"name": format!("D_{k}"), "refersTo": format!("=D_{}", k + 1)})).unwrap();
+        }
+        s.execute("formulas.defineName", json!({"name": "D_21", "refersTo": "=Sheet1!$B$2"})).unwrap();
+        s.execute("cell.set", json!({"cell": "E1", "input": "=D_1"})).unwrap();
+        let t = trace(&mut s, json!({"cell": "E1"}));
+        assert_eq!(t["untraceable"], true);
+        assert!(cells(&t, "links").is_empty());
+    }
+
+    #[test]
+    fn cycles_end_and_dynamic_references_are_untraceable() {
+        let mut s = s();
+        put(&mut s, "B2", 1.0, "b2");
+        s.execute("cell.set", json!({"cell": "A1", "input": "=B1+B2"})).unwrap();
+        s.execute("cell.set", json!({"cell": "B1", "input": "=A1+1"})).unwrap();
+        let t = trace(&mut s, json!({"cell": "A1"}));
+        assert_eq!(cells(&t, "links"), ["Sheet1!B2"]);
+        assert_eq!(t["untraceable"], false);
+        s.execute("cell.set", json!({"cell": "C1", "input": "=INDIRECT(\"B2\")"})).unwrap();
+        s.execute("cell.set", json!({"cell": "C2", "input": "=OFFSET(B2,0,0)"})).unwrap();
+        s.execute("cell.set", json!({"cell": "C3", "input": "=C2*2"})).unwrap();
+        for c in ["C1", "C2", "C3"] {
+            assert_eq!(trace(&mut s, json!({"cell": c}))["untraceable"], true, "{c}");
+        }
+    }
+
+    #[test]
+    fn the_trace_stops_at_its_cap() {
+        let mut s = s();
+        let rows: Vec<Json> = (0..12_000).map(|i| json!([i])).collect();
+        s.execute("range.setValues", json!({"range": "A1", "values": rows})).unwrap();
+        // The first cell read is linked; the last ones are never reached.
+        s.execute("source.set", json!({"range": "A1", "links": [[link_json("one")]]})).unwrap();
+        s.execute("source.set", json!({"range": "A12000", "links": [[link_json("last")]]})).unwrap();
+        s.execute("cell.set", json!({"cell": "C1", "input": "=SUM(A1:A12000)"})).unwrap();
+        let t = trace(&mut s, json!({"cell": "C1"}));
+        assert_eq!(t["truncated"], true);
+        assert_eq!(cells(&t, "links"), ["Sheet1!A1"]);
+        let seen = t["unsourced"].as_array().unwrap().len();
+        // The cap counts every cell visited: the traced formula, the linked A1 and the unlinked rest.
+        assert_eq!(1 + 1 + seen, crate::source_state::TRACE_CAP, "{seen} cells listed");
+        // Below the cap nothing is cut.
+        s.execute("cell.set", json!({"cell": "C2", "input": "=SUM(A1:A100)"})).unwrap();
+        let t = trace(&mut s, json!({"cell": "C2"}));
+        assert_eq!(t["truncated"], false);
+        assert_eq!(t["unsourced"].as_array().unwrap().len(), 99);
+    }
+
+    #[test]
+    fn a_spilled_value_traces_through_its_formula() {
+        let mut s = s();
+        put(&mut s, "B2", 1.0, "b2");
+        s.execute("range.setValues", json!({"range": "B3", "values": [[2]]})).unwrap();
+        s.execute("cell.set", json!({"cell": "D1", "input": "=B2:B3*1"})).unwrap();
+        assert_eq!(s.doc().unwrap().wb.active().unwrap().value(CellRef::parse("D2").unwrap()), gridcraft_core::Value::Number(2.0));
+        let t = trace(&mut s, json!({"cell": "D2"}));
+        assert_eq!(cells(&t, "links"), ["Sheet1!B2"]);
+        assert_eq!(cells(&t, "unsourced"), ["Sheet1!B3"]);
     }
 }
