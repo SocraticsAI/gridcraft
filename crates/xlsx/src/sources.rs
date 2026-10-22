@@ -223,6 +223,31 @@ mod tests {
     }
 
     #[test]
+    fn links_on_sheets_with_quotes_ampersands_and_accents_reopen_exactly() {
+        let names = ["Q3 \"Café\" & Co's", "Q3 '19", "Résumé <Σ>"];
+        let mut wb = Workbook::new();
+        for n in names {
+            wb.sheets.push(Arc::new(Sheet::new(n)));
+        }
+        for (i, n) in names.iter().enumerate() {
+            let sh = wb.sheet_mut(i + 1).unwrap();
+            sh.set_value(CellRef::new(1, 1), 1.0.into());
+            sh.sources.insert(CellRef::new(1, 1), link(&format!("{n} / Beginning Balance")));
+        }
+        let bytes = write_xlsx(&wb).unwrap();
+        let (back, report) = read_xlsx(&bytes).unwrap();
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+        for (i, n) in names.iter().enumerate() {
+            assert_eq!(back.sheets[i + 1].name, *n);
+            assert_eq!(back.sheets[i + 1].sources, wb.sheets[i + 1].sources, "{n}");
+        }
+        let (third, _) = read_xlsx(&write_xlsx(&back).unwrap()).unwrap();
+        for i in 1..=names.len() {
+            assert_eq!(third.sheets[i].sources, wb.sheets[i].sources);
+        }
+    }
+
+    #[test]
     fn a_links_part_over_64_mib_reopens_with_every_link_and_is_written_once() {
         let mut wb = Workbook::new();
         let s0 = wb.sheet_mut(0).unwrap();
