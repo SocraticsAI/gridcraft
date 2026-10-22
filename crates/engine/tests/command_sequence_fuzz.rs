@@ -941,7 +941,10 @@ fn curated_params(rng: &mut Rng, wb: &Workbook, id: &str) -> Json {
                         (0..r.width())
                             .map(|_| {
                                 if rng.chance(70) {
-                                    json!({"file": "Data Room/Cash/Statement.pdf", "locator": format!("Row {}", rng.int(1, 99)), "storeRow": format!("S!C{}", rng.int(1, 99))})
+                                    // Every third locator carries characters XML can't hold (PDF text has form feeds).
+                                    let n = rng.int(1, 99);
+                                    let locator = if n % 3 == 0 { format!("Page 2\u{0C}Row {n}\u{01}") } else { format!("Row {n}") };
+                                    json!({"file": "Data Room/Cash/Statement.pdf", "locator": locator, "storeRow": format!("S!C{}", rng.int(1, 99))})
                                 } else {
                                     Json::Null
                                 }

@@ -5,7 +5,8 @@
 //! The part is `customXml/itemN.xml` (the first `N` no other part uses), related from the workbook
 //! by a `customXml` relationship, with an `itemPropsN.xml` naming its schema:
 //! `<sources xmlns="urn:socratics:sources:1"><sheet name="Sheet1"><link ref="B2" file="…"
-//! locator="…" storeRow="…"/></sheet></sources>`. Reading takes it into the model, and the
+//! locator="…" storeRow="…"/></sheet></sources>`. Characters XML can't carry are written as
+//! Excel's `_xHHHH_` escapes, so every link reopens exactly. Reading takes it into the model, and the
 //! pass-through of unmodelled custom XML (`passthrough.rs`) leaves it out, so a save writes it
 //! once, afresh.
 
@@ -18,7 +19,7 @@ use gridcraft_model::{SourceLink, Workbook};
 use crate::package::{Rel, normalize};
 use crate::read::Ctx;
 use crate::write::{Out, Rels, XML_DECL};
-use crate::xml::{self, esc_attr};
+use crate::xml::{self, decode_xstring, encode_xstring, esc_attr};
 
 /// Namespace of the part, and the schema its properties name.
 pub const NS: &str = "urn:socratics:sources:1";
@@ -46,9 +47,9 @@ pub fn write(wb: &Workbook, out: &mut Out, wb_rels: &mut Rels) {
                 x,
                 "<link ref=\"{}\" file=\"{}\" locator=\"{}\" storeRow=\"{}\"/>",
                 c.a1(),
-                esc_attr(&l.file),
-                esc_attr(&l.locator),
-                esc_attr(&l.store_row)
+                attr(&l.file),
+                attr(&l.locator),
+                attr(&l.store_row)
             );
         }
         x.push_str("</sheet>");
@@ -71,6 +72,12 @@ pub fn write(wb: &Workbook, out: &mut Out, wb_rels: &mut Rels) {
     rels.add("customXmlProps", &format!("itemProps{n}.xml"));
     out.part(&format!("customXml/_rels/item{n}.xml.rels"), None, rels.xml().into_bytes());
     wb_rels.add("customXml", &format!("../customXml/item{n}.xml"));
+}
+
+/// A link field as an attribute value. Characters XML can't carry are written as Excel's
+/// `_xHHHH_` escapes (and literal look-alikes protected), so the field reopens exactly.
+fn attr(s: &str) -> String {
+    esc_attr(&encode_xstring(s))
 }
 
 fn mentions_ns(bytes: &[u8]) -> bool {
@@ -123,12 +130,12 @@ pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
                     return;
                 }
                 let Some(cell) = l.attr("ref").and_then(CellRef::parse).filter(CellRef::is_valid) else { continue };
-                let (Some(file), Some(locator)) = (l.attr("file"), l.attr("locator")) else { continue };
+                let (Some(file), Some(locator)) = (l.attr("file").map(decode_xstring), l.attr("locator").map(decode_xstring)) else { continue };
                 if file.trim().is_empty() || locator.trim().is_empty() {
                     continue;
                 }
-                let store_row = l.attr("storeRow").unwrap_or_default().to_string();
-                sheet.sources.insert(cell, SourceLink { file: file.to_string(), locator: locator.to_string(), store_row });
+                let store_row = l.attr("storeRow").map(decode_xstring).unwrap_or_default();
+                sheet.sources.insert(cell, SourceLink { file, locator, store_row });
                 count += 1;
             }
         }
@@ -188,6 +195,30 @@ mod tests {
         let again = write_xlsx(&back).unwrap();
         assert_eq!(sources_parts(&again).len(), 1);
         let (third, _) = read_xlsx(&again).unwrap();
+        assert_eq!(third.sheets[0].sources, wb.sheets[0].sources);
+    }
+
+    #[test]
+    fn control_characters_and_escape_lookalikes_in_links_reopen_exactly() {
+        let mut wb = Workbook::new();
+        let s0 = wb.sheet_mut(0).unwrap();
+        s0.sources.insert(
+            CellRef::new(0, 0),
+            SourceLink { file: "Data Room/f.pdf".into(), locator: "Page 2\u{0C}Beginning Balance".into(), store_row: "S!A1".into() },
+        );
+        s0.sources.insert(
+            CellRef::new(1, 0),
+            SourceLink { file: "Data Room/a\u{01}b.pdf".into(), locator: "x\u{01}y\u{0B}z\u{7F}".into(), store_row: "r\u{1F}\u{FFFE}".into() },
+        );
+        // Text that already looks like Excel's `_xHHHH_` escape stays literal.
+        s0.sources.insert(
+            CellRef::new(2, 0),
+            SourceLink { file: "Data Room/_x0041_.pdf".into(), locator: "_x005F_ and _x000C_".into(), store_row: String::new() },
+        );
+        let bytes = write_xlsx(&wb).unwrap();
+        let (back, _) = read_xlsx(&bytes).unwrap();
+        assert_eq!(back.sheets[0].sources, wb.sheets[0].sources);
+        let (third, _) = read_xlsx(&write_xlsx(&back).unwrap()).unwrap();
         assert_eq!(third.sheets[0].sources, wb.sheets[0].sources);
     }
 
