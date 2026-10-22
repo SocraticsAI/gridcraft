@@ -677,6 +677,39 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::disallowed_methods)] // a native-only timing test: the clock is read off wasm
+    fn whole_column_references_over_many_stored_blanks_stay_bounded() {
+        // 200,000 stored blank cells in A and B (formatted, never typed in), a linked number below
+        // them, and 5,000 formulas each reading column B. Written straight into the workbook:
+        // `cell.set` would recalculate every SUM.
+        let mut s = s();
+        put(&mut s, "B200001", 7.0, "b");
+        let at = |a1: &str| CellRef::parse(a1).unwrap();
+        let formula = |text: &str| gridcraft_model::Cell { formula: Some(Arc::new(gridcraft_model::Formula::new(text))), ..Default::default() };
+        let wb = Arc::make_mut(&mut s.doc_mut().unwrap().wb);
+        let sh = wb.sheet_mut(0).unwrap();
+        let blank = gridcraft_model::Cell { style: gridcraft_model::StyleId(1), ..Default::default() };
+        for row in 0..200_000 {
+            sh.set_cell(CellRef::new(row, 0), blank.clone());
+            sh.set_cell(CellRef::new(row, 1), blank.clone());
+        }
+        assert_eq!(sh.cells.len(), 400_001);
+        for k in 1..=5_000 {
+            // The same area over and over: scanned once.
+            sh.set_cell(at(&format!("D{k}")), formula(&format!("=SUM(B:B)+D{}", k + 1)));
+            // A different area each time: the scan budget ends the trace.
+            sh.set_cell(at(&format!("E{k}")), formula(&format!("=SUM(B{k}:B1048576)+E{}", k + 1)));
+        }
+        let started = std::time::Instant::now();
+        let t = trace(&mut s, json!({"cell": "D1"}));
+        assert_eq!(cells(&t, "links"), ["Sheet1!B200001"]);
+        assert_eq!(t["truncated"], false);
+        let t = trace(&mut s, json!({"cell": "E1"}));
+        assert_eq!(t["truncated"], true);
+        assert!(started.elapsed() < std::time::Duration::from_secs(10), "took {:?}", started.elapsed());
+    }
+
+    #[test]
     fn a_spilled_value_traces_through_its_formula() {
         let mut s = s();
         put(&mut s, "B2", 1.0, "b2");

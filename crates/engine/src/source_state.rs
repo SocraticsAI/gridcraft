@@ -15,6 +15,9 @@ use gridcraft_model::{DefinedName, Formula, Sheet, SourceLink, Workbook};
 /// Most steps one trace takes: each cell visited, each defined name expanded and each reference a
 /// name expands to counts one. Past it the trace reports `truncated`.
 pub const TRACE_CAP: usize = 10_000;
+/// Most stored rows, cells and spilled values one trace scans while reading the ranges formulas
+/// cover (blanks and cells already reached included). Past it the trace reports `truncated`.
+const SCAN_CAP: usize = 100 * TRACE_CAP;
 /// Longest chain of defined names followed (a name that refers to a name…).
 const MAX_NAME_DEPTH: usize = 16;
 
@@ -132,6 +135,10 @@ struct Tracer<'a> {
     names: HashSet<NameUse>,
     /// Steps taken, against [`TRACE_CAP`].
     spent: usize,
+    /// Areas already scanned: a range many formulas read is walked once.
+    scanned: HashSet<Area>,
+    /// Entries scanned, against [`SCAN_CAP`].
+    scan_spent: usize,
 }
 
 impl Tracer<'_> {
@@ -142,6 +149,16 @@ impl Tracer<'_> {
             return false;
         }
         self.spent += 1;
+        true
+    }
+
+    /// Takes one entry of the scan budget; false (and `truncated`) once it is used up.
+    fn scan(&mut self) -> bool {
+        if self.scan_spent >= SCAN_CAP {
+            self.out.truncated = true;
+            return false;
+        }
+        self.scan_spent += 1;
         true
     }
 
@@ -217,35 +234,59 @@ impl Tracer<'_> {
     }
 
     /// Queues each cell of `area` that holds something (stored cells, then spilled values) and
-    /// isn't queued yet, while the budget lasts.
+    /// isn't queued yet, while the budgets last. Each area is scanned once per trace.
     fn queue_area(&mut self, area: &Area, queue: &mut VecDeque<Key>) {
         let wb = self.wb;
         let Some(sh) = wb.sheet(area.sheet) else { return };
         let r = area.range;
-        // Ranges are normalised; an inverted one would make the spill lookup below panic.
-        if r.start.row > r.end.row {
+        // Ranges are normalised; an inverted one would make the lookups below panic.
+        if r.start.row > r.end.row || r.start.col > r.end.col || !self.scanned.insert(*area) {
             return;
         }
-        let stored = sh.cells.iter_range(r).map(|(c, _)| c).filter(|c| !is_blank(sh, *c));
-        let spilled = sh.spill.range(CellRef::new(r.start.row, 0)..=CellRef::new(r.end.row, u32::MAX)).map(|(c, _)| *c);
-        for c in stored.chain(spilled.filter(|c| r.contains(*c) && is_blank(sh, *c))) {
-            let k = (area.sheet, c);
-            if self.seen.contains(&k) {
-                continue;
-            }
-            if !self.spend() {
+        for row in sh.cells.rows_in(r.start.row, r.end.row) {
+            if !self.scan() {
                 return;
             }
-            self.seen.insert(k);
-            queue.push_back(k);
+            for (col, _) in sh.cells.row(row, r.start.col, r.end.col) {
+                let c = CellRef::new(row, col);
+                if !self.scan() || (!is_blank(sh, c) && !self.enqueue((area.sheet, c), queue)) {
+                    return;
+                }
+            }
         }
+        for (&c, _) in sh.spill.range(CellRef::new(r.start.row, 0)..=CellRef::new(r.end.row, u32::MAX)) {
+            if !self.scan() || (r.contains(c) && is_blank(sh, c) && !self.enqueue((area.sheet, c), queue)) {
+                return;
+            }
+        }
+    }
+
+    /// Queues `k` unless it is queued already; false once the step budget is used up.
+    fn enqueue(&mut self, k: Key, queue: &mut VecDeque<Key>) -> bool {
+        if self.seen.contains(&k) {
+            return true;
+        }
+        if !self.spend() {
+            return false;
+        }
+        self.seen.insert(k);
+        queue.push_back(k);
+        true
     }
 }
 
 /// What `cell` on `sheet` rests on: its own link if it is a linked value, else the linked values
 /// and unlinked numbers its formula reads, breadth-first, each once.
 pub fn trace(wb: &Workbook, sheet: usize, cell: CellRef) -> SourceTrace {
-    let mut t = Tracer { wb, out: SourceTrace::default(), seen: HashSet::from([(sheet, cell)]), names: HashSet::new(), spent: 1 };
+    let mut t = Tracer {
+        wb,
+        out: SourceTrace::default(),
+        seen: HashSet::from([(sheet, cell)]),
+        names: HashSet::new(),
+        spent: 1,
+        scanned: HashSet::new(),
+        scan_spent: 0,
+    };
     let mut queue: VecDeque<Key> = VecDeque::from([(sheet, cell)]);
     while let Some((si, c)) = queue.pop_front() {
         let Some(sh) = wb.sheet(si) else { continue };
