@@ -21,6 +21,22 @@ carries a notice on its first line.
    `ui.ribbonTab`. Files: `crates/ui-egui/src/lib.rs`, `crates/ui-egui/src/ribbon.rs`, the new
    `crates/ui-egui/tests/host_automate.rs`, and `crates/ui-egui/tests/host_chrome.rs` (its `Chrome` literals
    take the new field from the default). Not proposed upstream yet.
+3. **Cell source links** (2026). A sheet keeps a source link per cell (`Sheet::sources`: the document a
+   hard-coded value was read from, where in it, and the lineage store row). Links move with their
+   cells (inserting and deleting rows, columns and cells, Move Columns, Sort, Remove Duplicates,
+   cut and paste, dragging a selection), copy and paste copies them, and typing, filling or
+   replacing over a cell, clearing its contents and merging it into a neighbour drop its link. They are
+   saved in the `.xlsx` as a custom XML part (namespace `urn:socratics:sources:1`) and read back. New
+   commands `source.set`, `source.get`, `source.clear` and `source.trace` (a formula traced through its
+   references, across sheets, 3-D references, names and tables, to linked values). A marker in a cell's
+   top-left corner shows whether its value is traced to sources, with a tooltip; clicking it raises
+   `UiRequest::SourceClick`, which goes to the host's `Services::source_click`. The ribbon gains Clear
+   Sources, and the marker colours are theme tokens. Files: `crates/model`
+   (`src/{cellmap,features,sheet,store}.rs`), `crates/engine` (`src/lib.rs`, the new `src/source_state.rs`,
+   `src/cmd/{data,edit,format,formulas,insert,mod,sheet}.rs`, the new `src/cmd/source.rs`,
+   `tests/command_sequence_fuzz.rs`), `crates/xlsx` (`src/{lib,passthrough,read,write}.rs`, the new
+   `src/sources.rs`, `src/tests/passthrough_tests.rs`) and `crates/ui-egui` (`src/{grid,lib,ribbon,theme}.rs`,
+   the new `src/source_marks.rs` and `tests/source_links.rs`). Not proposed upstream.
 
 An earlier change, the host chrome switch, was merged upstream as
 [storytold/gridcraft#1877](https://github.com/storytold/gridcraft/pull/1877) and is in GridCraft from v0.10.0.
