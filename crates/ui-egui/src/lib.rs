@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, and adds the `Chrome::automate` switch. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch and cell source markers. See MODIFICATIONS.md.
 //! GridCraft's egui frontend: an Excel-style window (title bar with Quick Access Toolbar,
 //! ribbon, formula bar, grid, sheet tabs, status bar) over `gridcraft-engine`.
 //!
@@ -30,6 +30,7 @@ pub mod pivot_pane;
 pub mod printing;
 pub mod ribbon;
 pub mod selection_glide;
+pub mod source_marks;
 pub mod tabs;
 pub mod text_box;
 pub mod theme;

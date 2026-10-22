@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and cell source markers. See MODIFICATIONS.md.
 //! The worksheet grid: virtualised painting of only the visible cells, frozen panes,
 //! headers, selection, fill handle, column/row resizing, text overflow, borders, conditional
 //! formats, tables, comments, filters, sparklines, floating charts/pictures/shapes and the
@@ -152,6 +152,8 @@ pub struct GridState {
     pub wheel_zoom: Option<WheelZoom>,
     /// A one-finger touch drag in progress: it pans the sheet instead of selecting.
     pub touch_pan: bool,
+    /// The source marker tooltip: (doc uid, revision, sheet, cell) and its text, traced once per key.
+    pub source_tip: Option<((u64, u64, usize, CellRef), Option<String>)>,
 }
 
 /// Ctrl+wheel zoom for one (doc uid, sheet). egui eases a notch in over several frames and
@@ -836,6 +838,9 @@ fn paint_panes(
         }
         let p = painter.with_clip_rect(*clip);
         paint_quadrant(&p, geo, wb, si, sh, *rows, *cols, cf, t);
+        if let Some(d) = app.session.active() {
+            crate::source_marks::paint_quadrant(d, &p, geo, si, sh, *rows, *cols, t);
+        }
         paint_selection(&p, geo, sh, sel, outline, t, app, *rows, *cols);
     }
     // Freeze lines.
@@ -3086,6 +3091,24 @@ pub(crate) fn paint_overlays(
         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), egui::Id::new("link_tip"), egui::PopupAnchor::Pointer).show(|ui| {
             ui.label(tip);
         });
+    }
+    // Source marker tooltip (traced once per document version and cell, never while painting cells).
+    let marker = match ui.ctx().pointer_hover_pos() {
+        Some(pos) if app.editor.is_none() && app.grid.drag == Drag::None && ui.ctx().layer_id_at(pos) == Some(ui.layer_id()) => {
+            app.session.active().and_then(|d| crate::source_marks::hit(geo, d, si, sh, geo.mirror_pos(pos)))
+        }
+        _ => None,
+    };
+    if let (Some(c), Some((uid, revision))) = (marker, app.session.active().map(|d| (d.uid, d.revision))) {
+        let key = (uid, revision, si, c);
+        if app.grid.source_tip.as_ref().is_none_or(|(k, _)| *k != key) {
+            app.grid.source_tip = Some((key, crate::source_marks::tip(wb, si, c)));
+        }
+        if let Some((_, Some(text))) = &app.grid.source_tip {
+            egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), egui::Id::new("source_tip"), egui::PopupAnchor::Pointer).show(|ui| {
+                ui.label(text.as_str());
+            });
+        }
     }
     // Trace precedents / dependents arrows.
     if let Some(trace) = app.grid.trace.clone()

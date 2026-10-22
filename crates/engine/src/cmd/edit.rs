@@ -71,7 +71,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s, p, "comments"
         )),
         cmd!("edit.clearHyperlinks", "Clear Hyperlinks", ["Home", "Editing", "Clear"], None, "{range?}", has_doc, |s, p| clear(s, p, "hyperlinks")),
-        cmd!("edit.clearSources", "Clear Sources", [], None, "{range?}", has_doc, |s, p| clear(s, p, "sources")),
+        cmd!("edit.clearSources", "Clear Sources", ["Home", "Editing", "Clear"], None, "{range?}", has_doc, |s, p| clear(s, p, "sources")),
         cmd!("edit.fillDown", "Fill Down", ["Home", "Editing", "Fill"], Some("Cmd+D"), "{range?}", has_doc, |s, p| fill_dir(s, p, 1, 0)),
         cmd!("edit.fillRight", "Fill Right", ["Home", "Editing", "Fill"], Some("Cmd+R"), "{range?}", has_doc, |s, p| fill_dir(s, p, 0, 1)),
         cmd!("edit.fillUp", "Fill Up", ["Home", "Editing", "Fill"], None, "{range?}", has_doc, |s, p| fill_dir(s, p, -1, 0)),

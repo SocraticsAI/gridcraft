@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source marker colours. See MODIFICATIONS.md.
 //! Design tokens and fonts.
 //!
 //! Colours are our own, tuned to read like a modern desktop spreadsheet. Fonts come from the
@@ -50,6 +51,10 @@ pub struct Tokens {
     pub notice_warn_border: Color32,
     pub notice_info_bg: Color32,
     pub notice_info_border: Color32,
+    /// Cell source marker of a value traced to its source documents.
+    pub sourced_mark: Color32,
+    /// Cell source marker of a value (or a formula input) with no source.
+    pub unsourced_mark: Color32,
 }
 
 impl Tokens {
@@ -92,6 +97,8 @@ impl Tokens {
             notice_warn_border: Color32::from_rgb(0xF0, 0xC3, 0x6E),
             notice_info_bg: Color32::from_rgb(0xEA, 0xF2, 0xFB),
             notice_info_border: Color32::from_rgb(0xB9, 0xD2, 0xEC),
+            sourced_mark: Color32::from_rgb(0x1F, 0x6F, 0xD1),
+            unsourced_mark: Color32::from_rgb(0xE0, 0x9A, 0x1E),
         }
     }
 
@@ -134,6 +141,9 @@ impl Tokens {
             notice_warn_border: Color32::from_rgb(0x7A, 0x67, 0x30),
             notice_info_bg: Color32::from_rgb(0x24, 0x33, 0x44),
             notice_info_border: Color32::from_rgb(0x3B, 0x55, 0x72),
+            // Cells stay white in the dark theme (`grid_bg`), so the marks keep their light colours.
+            sourced_mark: Color32::from_rgb(0x1F, 0x6F, 0xD1),
+            unsourced_mark: Color32::from_rgb(0xE0, 0x9A, 0x1E),
         }
     }
 
