@@ -114,6 +114,8 @@ pub struct DocState {
     /// The format `path`'s content was recognised as when its extension doesn't name one (an
     /// XLSX called `budget.dat`): Save writes it back in that format.
     pub content_kind: Option<io::FileKind>,
+    /// Cell source markers of this document, computed once per workbook version.
+    pub source_states: Arc<source_state::SourceStateCache>,
 }
 
 static NEXT_UID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -139,6 +141,7 @@ impl DocState {
             sheet_selections: vec![],
             unlocked_ranges: vec![],
             content_kind: None,
+            source_states: Arc::default(),
         }
     }
     pub fn is_dirty(&self) -> bool {
