@@ -599,6 +599,31 @@ mod tests {
     }
 
     #[test]
+    fn a_name_holding_a_this_row_reference_is_expanded_on_each_row_it_is_used() {
+        let mut s = s();
+        s.execute("range.setValues", json!({"range": "A10", "values": [["Item", "Amount"], ["Rent", 1200], ["Fees", 300]]})).unwrap();
+        s.execute("source.set", json!({"range": "B11:B12", "links": [[link_json("rent")], [link_json("fees")]]})).unwrap();
+        s.execute("insert.table", json!({"range": "A10:B12", "header": true, "name": "Costs"})).unwrap();
+        s.execute("formulas.defineName", json!({"name": "ThisAmt", "refersTo": "=Costs[@Amount]"})).unwrap();
+        s.execute("cell.set", json!({"cell": "E11", "input": "=ThisAmt"})).unwrap();
+        s.execute("cell.set", json!({"cell": "E12", "input": "=ThisAmt"})).unwrap();
+        s.execute("cell.set", json!({"cell": "F1", "input": "=E11+E12"})).unwrap();
+        assert_eq!(cells(&trace(&mut s, json!({"cell": "E12"})), "links"), ["Sheet1!B12"]);
+        assert_eq!(cells(&trace(&mut s, json!({"cell": "F1"})), "links"), ["Sheet1!B11", "Sheet1!B12"]);
+        let marker = |s: &Session| {
+            let d = s.doc().unwrap();
+            crate::source_state::source_state(d, 0, CellRef::parse("F1").unwrap())
+        };
+        assert_eq!(marker(&s), Some(crate::source_state::SourceState::Sourced));
+        // With B12 unlinked, F1 rests on an unlinked number: listed, and the marker turns amber.
+        s.execute("source.clear", json!({"range": "B12"})).unwrap();
+        let t = trace(&mut s, json!({"cell": "F1"}));
+        assert_eq!(cells(&t, "links"), ["Sheet1!B11"]);
+        assert_eq!(t["unsourced"], json!([{"sheet": "Sheet1", "cell": "B12"}]));
+        assert_eq!(marker(&s), Some(crate::source_state::SourceState::Unsourced));
+    }
+
+    #[test]
     #[allow(clippy::disallowed_methods)] // a native-only timing test: the clock is read off wasm
     fn names_that_fan_out_are_expanded_once_each() {
         // N_k = N_k+1 four times over: without a visited set, N_1 would expand 4^15 copies of N_16.

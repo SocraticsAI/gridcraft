@@ -13,7 +13,7 @@ use std::sync::Mutex;
 use gridcraft_calc::Key;
 use gridcraft_calc::eval::{Area, Ev, Evaluator, Host};
 use gridcraft_core::{CellRef, RangeRef, Value};
-use gridcraft_formula::Expr;
+use gridcraft_formula::{Expr, StructItem};
 use gridcraft_model::{DefinedName, Formula, Sheet, SourceLink, Workbook};
 
 use crate::DocState;
@@ -102,6 +102,19 @@ fn defined_name<'w>(wb: &'w Workbook, sheet: usize, n: &str) -> Option<&'w Defin
     wb.name(bare, scope_sheet)
 }
 
+/// Whether `e` holds a structured reference whose cells depend on where it is used: this row
+/// (`Costs[@Amount]`) or the enclosing table (`[Amount]`). The walk is bounded by the parser's
+/// nesting limit.
+fn has_positional_struct(e: &Expr) -> bool {
+    let mut found = false;
+    e.walk(&mut |x| {
+        if let Expr::Struct(r) = x {
+            found |= r.table.is_empty() || r.specifiers.contains(&StructItem::ThisRow);
+        }
+    });
+    found
+}
+
 /// A host for resolving table names and structured references to the cells they cover.
 struct RefHost<'a> {
     wb: &'a Workbook,
@@ -132,8 +145,8 @@ fn reference_areas(wb: &Workbook, sheet: usize, at: CellRef, e: &Expr) -> Option
 }
 
 /// A defined name as expanded at one place: the name (scope, lower-cased), the sheet its
-/// unqualified references point at, and the cell its relative references move by (`None`: it
-/// has none, so every use expands the same).
+/// unqualified references point at, and the cell its relative references and this-row structured
+/// references depend on (`None`: it has none, so every use expands the same).
 type NameUse = (Option<usize>, String, usize, Option<CellRef>);
 
 /// A number of steps that may be taken, one at a time.
@@ -235,7 +248,9 @@ impl<'a> InputResolver<'a> {
         let relative = gridcraft_formula::adjust::has_relative_refs(&expr);
         // Unqualified references in a name refer to its scope sheet, else the sheet using it.
         let scope = def.scope.unwrap_or(sheet);
-        let key: NameUse = (def.scope, def.name.to_ascii_lowercase(), scope, relative.then_some(at));
+        // A structured reference may name the using cell's row (`Costs[@Amount]`) or table: such
+        // a name expands differently where it is used, like one with relative references.
+        let key: NameUse = (def.scope, def.name.to_ascii_lowercase(), scope, (relative || has_positional_struct(&expr)).then_some(at));
         if self.names.contains(&key) {
             return;
         }
