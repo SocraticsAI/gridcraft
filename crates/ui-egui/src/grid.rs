@@ -2124,6 +2124,18 @@ fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Response, geo: &
         if app.editor.is_some() && !app.commit_edit(0, 0, false, false) {
             return;
         }
+        // A click on a source marker selects the cell and hands it to the host, which opens the
+        // source; a click elsewhere in the cell selects as usual.
+        if primary_clicked
+            && !mods.any()
+            && let Some(at) = app.session.active().and_then(|d| crate::source_marks::hit(geo, d, wb.active_sheet, sh, p))
+        {
+            let _ = app.session.run("selection.set", json!({"cell": at.a1()}));
+            app.session.ui_requests.push(gridcraft_engine::UiRequest::SourceClick { sheet: sh.name.clone(), cell: at.a1() });
+            app.after_engine();
+            app.grid.last_click = None;
+            return;
+        }
         if on_handle(p) {
             app.grid.drag = Drag::Fill { target: None };
             return;

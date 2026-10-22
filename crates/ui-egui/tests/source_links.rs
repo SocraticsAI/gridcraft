@@ -1,7 +1,10 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
-//! Cell source markers: hovering one names the value's source.
+//! Cell source markers: hovering one names the value's source; clicking one tells the host.
 
-use egui::{Event, Pos2};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use egui::{Event, Modifiers, PointerButton, Pos2};
 use gridcraft_engine::Session;
 use gridcraft_engine::core::CellRef;
 use gridcraft_engine::model::SourceLink;
@@ -100,6 +103,66 @@ fn a_workbook_without_links_has_no_marker_to_hover() {
     h.input_mut().events.push(Event::PointerMoved(at));
     h.run_steps(2);
     assert_eq!(h.state().grid.source_tip, None);
+}
+
+type Clicks = Rc<RefCell<Vec<(String, String)>>>;
+
+fn with_clicks() -> (Harness, Clicks) {
+    let clicks: Clicks = Rc::default();
+    let seen = clicks.clone();
+    let services = Services {
+        source_click: Some(Box::new(move |sheet: &str, cell: &str| seen.borrow_mut().push((sheet.to_string(), cell.to_string())))),
+        ..Default::default()
+    };
+    (harness(session(), services), clicks)
+}
+
+fn click(h: &mut Harness, pos: Pos2) {
+    h.input_mut().events.extend([
+        Event::PointerMoved(pos),
+        Event::PointerButton { pos, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE },
+        Event::PointerButton { pos, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE },
+    ]);
+    h.run_steps(2);
+}
+
+fn active(h: &Harness) -> String {
+    h.state().session.active().unwrap().selection.active.a1()
+}
+
+#[test]
+fn clicking_a_marker_selects_the_cell_and_tells_the_host() {
+    let (mut h, clicks) = with_clicks();
+    let at = marker_center(&h, "C4");
+    click(&mut h, at);
+    assert_eq!(active(&h), "C4");
+    assert_eq!(clicks.borrow().as_slice(), [("Sheet1".to_string(), "C4".to_string())]);
+    let at = marker_center(&h, "B3");
+    click(&mut h, at);
+    assert_eq!(clicks.borrow().last(), Some(&("Sheet1".to_string(), "B3".to_string())), "an unsourced marker is reported too");
+}
+
+#[test]
+fn clicking_elsewhere_in_the_cell_only_selects_it() {
+    let (mut h, clicks) = with_clicks();
+    let center = {
+        let app = h.state();
+        let sheet = app.session.active().unwrap().wb.active().unwrap();
+        Geo::new(sheet, app.grid.rect.unwrap(), app.view().scroll).cell_rect(sheet, CellRef::parse("B2").unwrap()).center()
+    };
+    click(&mut h, center);
+    assert_eq!(active(&h), "B2");
+    assert!(clicks.borrow().is_empty());
+}
+
+#[test]
+fn clicking_the_marker_of_a_hyperlinked_cell_does_not_follow_the_link() {
+    let (mut h, clicks) = with_clicks();
+    h.state_mut().session.execute("insert.link", json!({"cell": "B2", "target": "Sheet1!E9"})).unwrap();
+    let at = marker_center(&h, "B2");
+    click(&mut h, at);
+    assert_eq!(clicks.borrow().len(), 1);
+    assert_eq!(active(&h), "B2", "following the internal link would have gone to E9");
 }
 
 /// The top-left corners of the painted triangles of colour `color`.

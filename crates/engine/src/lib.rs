@@ -230,6 +230,11 @@ pub enum UiRequest {
     /// Start editing the active cell (F2) with optional initial text.
     EditCell(Option<String>),
     OpenUrl(String),
+    /// The user clicked a cell's source marker: the host opens the source (sheet name, A1 cell).
+    SourceClick {
+        sheet: String,
+        cell: String,
+    },
 }
 
 #[derive(Default)]

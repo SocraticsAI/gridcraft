@@ -198,6 +198,8 @@ pub struct Services {
     /// Web: hand PDF bytes to the browser's print flow directly (no download,
     /// no intermediate file) — opens the system print dialog on that PDF.
     pub print: Option<Box<dyn Fn(&[u8])>>,
+    /// A cell's source marker was clicked (sheet name, A1 cell); the host opens its source.
+    pub source_click: Option<Box<dyn Fn(&str, &str)>>,
 }
 
 /// Shared queue of files read asynchronously (browser file picker, drag and drop).
@@ -735,6 +737,11 @@ impl SheetApp {
                 UiRequest::OpenUrl(u) => {
                     if let Some(f) = &self.services.open_url {
                         f(&u);
+                    }
+                }
+                UiRequest::SourceClick { sheet, cell } => {
+                    if let Some(f) = &self.services.source_click {
+                        f(&sheet, &cell);
                     }
                 }
             }
