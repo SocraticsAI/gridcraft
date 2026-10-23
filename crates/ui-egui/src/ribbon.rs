@@ -278,7 +278,7 @@ fn sources_toggle(app: &mut SheetApp, ui: &mut Ui) {
     let (r, resp) = ui.allocate_exact_size(vec2(pad + icon + gap + text.size().x + pad, 30.0), Sense::click());
     let pill = r.shrink2(vec2(0.0, 4.0));
     if on {
-        ui.painter().rect_filled(pill, 5.0, t.source_selected_fill);
+        ui.painter().rect_filled(pill, 5.0, t.source_toggle_on);
         if resp.hovered() {
             ui.painter().rect_stroke(pill, 5.0, Stroke::new(1.0, t.sourced_mark), StrokeKind::Inside);
         }

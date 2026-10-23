@@ -177,15 +177,32 @@ fn square(h: &Harness) -> Option<source_marks::SourceSquare> {
     h.state().grid.source_square
 }
 
-/// The rectangles filled with `color` painted over the grid (the ribbon's Sources toggle shares
-/// the tint colour).
+/// The unoutlined rectangles filled with `color` painted over the grid (the selection tint).
 fn rects(h: &Harness, color: egui::Color32) -> Vec<egui::Rect> {
+    painted_over_grid(h, color, egui::Stroke::NONE.width)
+}
+
+/// The rectangles filled with `color` and outlined (1px, inside) in the marker blue painted over
+/// the grid (the source square).
+fn outlined(h: &Harness, color: egui::Color32) -> Vec<egui::Rect> {
+    painted_over_grid(h, color, 1.0)
+}
+
+fn painted_over_grid(h: &Harness, color: egui::Color32, stroke: f32) -> Vec<egui::Rect> {
     let grid = h.state().grid.rect.unwrap();
+    let blue = Tokens::light().sourced_mark;
     h.output()
         .shapes
         .iter()
         .filter_map(|s| match &s.shape {
-            egui::Shape::Rect(r) if r.fill == color && grid.intersects(r.rect) => Some(r.rect),
+            egui::Shape::Rect(r)
+                if r.fill == color
+                    && grid.intersects(r.rect)
+                    && r.stroke.width == stroke
+                    && (stroke == 0.0 || (r.stroke.color == blue && r.stroke_kind == egui::StrokeKind::Inside)) =>
+            {
+                Some(r.rect)
+            }
             _ => None,
         })
         .collect()
@@ -291,7 +308,10 @@ fn selecting_a_linked_cell_tints_it_and_shows_its_square_to_the_right() {
     assert!(sq.rect.left() > b2.right() && sq.rect.left() < b2.right() + 6.0, "just right of the cell: {sq:?} {b2:?}");
     assert!((sq.rect.width() - sq.rect.height()).abs() < 0.01 && (sq.rect.height() - b2.height().max(source_marks::SQUARE_MIN)).abs() < 0.01);
     assert!((sq.rect.center().y - b2.center().y).abs() < 0.01, "level with the cell");
-    assert_eq!(rects(&h, t.source_square_fill), [sq.rect], "painted in the chip colour");
+    assert_eq!(outlined(&h, t.source_square_fill), [sq.rect], "painted in the chip colour, outlined in the marker blue");
+    assert_eq!(t.source_selected_fill, egui::Color32::from_rgb(0xE6, 0xEE, 0xFA), "the light tint, the chip's resting blue");
+    assert_eq!(t.source_square_hover, egui::Color32::from_rgb(0xAF, 0xC7, 0xEC));
+    assert_eq!(t.source_toggle_on, egui::Color32::from_rgb(0xAF, 0xC7, 0xEC), "the Sources toggle keeps its own, deeper blue");
 }
 
 #[test]
@@ -301,7 +321,7 @@ fn an_unsourced_or_formula_active_cell_has_no_tint_or_square() {
     for cell in ["B3", "C2", "C4"] {
         select(&mut h, cell);
         assert_eq!(square(&h), None, "{cell}");
-        assert!(rects(&h, t.source_selected_fill).is_empty() && rects(&h, t.source_square_fill).is_empty(), "{cell}");
+        assert!(rects(&h, t.source_selected_fill).is_empty() && outlined(&h, t.source_square_fill).is_empty(), "{cell}");
     }
 }
 
@@ -347,8 +367,8 @@ fn hovering_the_square_names_the_source_and_lights_it() {
     h.input_mut().events.push(Event::PointerMoved(sq.rect.center()));
     h.run_steps(2);
     assert_eq!(tip_shown(&h).as_deref(), Some("GL Detail · GL Detail!C16102"));
-    assert!(rects(&h, t.source_selected_fill).contains(&sq.rect), "the square deepens to the hover blue");
-    assert!(rects(&h, t.source_square_fill).is_empty());
+    assert_eq!(outlined(&h, t.source_square_hover), [sq.rect], "the square deepens to the hover blue, still outlined");
+    assert!(outlined(&h, t.source_square_fill).is_empty());
 }
 
 #[test]
@@ -363,7 +383,7 @@ fn the_fill_handle_wins_over_the_square() {
     h.input_mut().events.push(Event::PointerMoved(at));
     h.run_steps(2);
     assert_eq!(h.state().grid.source_tip, None, "no source tooltip over the fill handle");
-    assert!(rects(&h, Tokens::light().source_selected_fill).iter().all(|r| *r != sq.rect), "the square isn't lit");
+    assert!(outlined(&h, Tokens::light().source_square_hover).iter().all(|r| *r != sq.rect), "the square isn't lit");
     click(&mut h, at);
     assert!(clicks.borrow().is_empty(), "the press grabbed the fill handle");
     assert_eq!(active(&h), "B2");
@@ -392,7 +412,7 @@ fn turning_the_inspector_off_hides_markers_tint_square_and_tips() {
     for color in [t.sourced_mark, t.unsourced_mark] {
         assert!(triangles(&h, color).is_empty(), "no markers");
     }
-    assert!(rects(&h, t.source_selected_fill).is_empty() && rects(&h, t.source_square_fill).is_empty(), "no tint, no square");
+    assert!(rects(&h, t.source_selected_fill).is_empty() && outlined(&h, t.source_square_fill).is_empty(), "no tint, no square");
     let at = marker_center(&h, "D2");
     h.input_mut().events.push(Event::PointerMoved(at));
     h.run_steps(2);
@@ -426,7 +446,7 @@ fn the_square_sits_on_the_far_side_of_a_right_to_left_cell() {
     let b2 = geo.screen_cell_rect(h.state().session.active().unwrap().wb.active().unwrap(), CellRef::parse("B2").unwrap());
     let on_screen = geo.mirror_rect(sq.rect);
     assert!(on_screen.right() < b2.left(), "mirrored: left of the cell on screen ({on_screen:?}, {b2:?})");
-    assert!(rects(&h, Tokens::light().source_square_fill).contains(&on_screen));
+    assert!(outlined(&h, Tokens::light().source_square_fill).contains(&on_screen));
     click(&mut h, on_screen.center());
     assert_eq!(clicks.borrow().as_slice(), [("Sheet1".to_string(), "B2".to_string())]);
 }

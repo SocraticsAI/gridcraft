@@ -140,12 +140,13 @@ impl SourceSquare {
         self.visible().contains(p)
     }
 
-    /// Paints the square into the pane `p` paints, in the hover colour while `hot`.
+    /// Paints the square into the pane `p` paints, outlined in the marker blue, in the hover
+    /// colour while `hot`.
     pub fn paint(&self, p: &Painter, hot: bool, t: &Tokens) {
         let p = p.with_clip_rect(p.clip_rect().intersect(self.clip));
         let side = self.rect.width();
-        let fill = if hot { t.source_selected_fill } else { t.source_square_fill };
-        p.rect_filled(self.rect, (side * 0.2).clamp(2.0, 4.0), fill);
+        let fill = if hot { t.source_square_hover } else { t.source_square_fill };
+        p.rect(self.rect, (side * 0.2).clamp(2.0, 4.0), fill, Stroke::new(1.0, t.sourced_mark), egui::StrokeKind::Inside);
         icons::paint(&p, self.rect.shrink(side * 0.2), Icon::ArrowUpRight, t.source_square_ink);
     }
 }

@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: cell source marker, selection tint and source square colours. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: cell source marker, selection tint, source square and Sources toggle colours. See MODIFICATIONS.md.
 //! Design tokens and fonts.
 //!
 //! Colours are our own, tuned to read like a modern desktop spreadsheet. Fonts come from the
@@ -55,12 +55,15 @@ pub struct Tokens {
     pub sourced_mark: Color32,
     /// Cell source marker of a value (or a formula input) with no source.
     pub unsourced_mark: Color32,
-    /// Source Inspector: the fill of an active cell holding a linked value, and of its source
-    /// square under the pointer.
+    /// Source Inspector: the fill of an active cell holding a linked value.
     pub source_selected_fill: Color32,
-    /// Source Inspector: the source square beside an active linked cell, and its arrow.
+    /// Source Inspector: the source square beside an active linked cell (outlined in
+    /// `sourced_mark`), its fill under the pointer, and its arrow.
     pub source_square_fill: Color32,
+    pub source_square_hover: Color32,
     pub source_square_ink: Color32,
+    /// The ribbon's Sources toggle while the Source Inspector is on.
+    pub source_toggle_on: Color32,
 }
 
 impl Tokens {
@@ -105,9 +108,11 @@ impl Tokens {
             notice_info_border: Color32::from_rgb(0xB9, 0xD2, 0xEC),
             sourced_mark: Color32::from_rgb(0x1F, 0x6F, 0xD1),
             unsourced_mark: Color32::from_rgb(0xE0, 0x9A, 0x1E),
-            source_selected_fill: Color32::from_rgb(0xAF, 0xC7, 0xEC),
+            source_selected_fill: Color32::from_rgb(0xE6, 0xEE, 0xFA),
             source_square_fill: Color32::from_rgb(0xE6, 0xEE, 0xFA),
+            source_square_hover: Color32::from_rgb(0xAF, 0xC7, 0xEC),
             source_square_ink: Color32::from_rgb(0x1B, 0x3A, 0x66),
+            source_toggle_on: Color32::from_rgb(0xAF, 0xC7, 0xEC),
         }
     }
 
@@ -155,9 +160,11 @@ impl Tokens {
             // would hide the cell's black text.
             sourced_mark: Color32::from_rgb(0x1F, 0x6F, 0xD1),
             unsourced_mark: Color32::from_rgb(0xE0, 0x9A, 0x1E),
-            source_selected_fill: Color32::from_rgb(0xAF, 0xC7, 0xEC),
+            source_selected_fill: Color32::from_rgb(0xE6, 0xEE, 0xFA),
             source_square_fill: Color32::from_rgb(0xE6, 0xEE, 0xFA),
+            source_square_hover: Color32::from_rgb(0xAF, 0xC7, 0xEC),
             source_square_ink: Color32::from_rgb(0x1B, 0x3A, 0x66),
+            source_toggle_on: Color32::from_rgb(0xAF, 0xC7, 0xEC),
         }
     }
 
