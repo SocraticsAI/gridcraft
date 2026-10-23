@@ -28,17 +28,15 @@ carries a notice on its first line.
    replacing over a cell, clearing its contents and merging it into a neighbour drop its link. They are
    saved in the `.xlsx` as a custom XML part (namespace `urn:socratics:sources:1`) and read back. New
    commands `source.set`, `source.get`, `source.clear` and `source.trace` (a formula traced through its
-   references, across sheets, 3-D references, names and tables, to linked values). Only hard-coded
-   figures carry a marker in their top-left corner: a linked number is shown as sourced, an unlinked
-   number as unsourced, and linked text or logicals (labels, headers) show nothing, with a tooltip naming the source or saying there is none; formulas (and spilled values)
-   are traced by `source.trace` but show no marker. The markers are indicators only (a click on one
+   references, across sheets, 3-D references, names and tables, to linked values, listing the
+   unlinked numbers it rests on). Only linked hard-coded numbers carry a marker, a blue triangle in
+   their top-left corner with a tooltip naming the source; unlinked numbers, linked text or logicals (labels, headers) and formulas (and spilled values, which
+   `source.trace` still traces) show nothing. The markers are indicators only (a click on one
    just selects the cell). When the active cell (only the active cell, even in a range) holds a linked
    number, it is tinted and a source square with an up-right arrow floats just right of it (left of it
    when that would be wholly off the pane; past a list-validation arrow; under the fill handle, which
    wins). Hovering the square names the source; clicking it raises `UiRequest::SourceClick` for the
    active cell, which goes to the host's `Services::source_click`, and leaves the selection as it is.
-   An active unsourced number gets the same treatment in orange: an orange tint and a square with a
-   "?" whose tooltip says there is no source and whose click does nothing.
    A Sources toggle in the ribbon's tab row, right after the last tab shown (View when the host hides
    Automate) and before any contextual tab, runs the UI command `view.sourceInspector` (`{on?: bool}`,
    on by default and saved with the other UI preferences in `UiState`); it is a button, not a tab, stays

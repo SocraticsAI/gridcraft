@@ -610,17 +610,17 @@ mod tests {
         s.execute("cell.set", json!({"cell": "F1", "input": "=E11+E12"})).unwrap();
         assert_eq!(cells(&trace(&mut s, json!({"cell": "E12"})), "links"), ["Sheet1!B12"]);
         assert_eq!(cells(&trace(&mut s, json!({"cell": "F1"})), "links"), ["Sheet1!B11", "Sheet1!B12"]);
-        let marker = |s: &Session, cell: &str| crate::source_state::source_state(&s.doc().unwrap().wb, 0, CellRef::parse(cell).unwrap());
+        let marker = |s: &Session, cell: &str| crate::source_state::is_sourced(&s.doc().unwrap().wb, 0, CellRef::parse(cell).unwrap());
         // A formula is traced but never marked; the values it reads are.
-        assert_eq!(marker(&s, "F1"), None);
-        assert_eq!(marker(&s, "B12"), Some(crate::source_state::SourceState::Sourced));
-        // With B12 unlinked, F1 rests on an unlinked number: listed, and B12's marker turns amber.
+        assert!(!marker(&s, "F1"));
+        assert!(marker(&s, "B12"));
+        // With B12 unlinked, F1 rests on an unlinked number: listed by the trace, and B12 unmarked.
         s.execute("source.clear", json!({"range": "B12"})).unwrap();
         let t = trace(&mut s, json!({"cell": "F1"}));
         assert_eq!(cells(&t, "links"), ["Sheet1!B11"]);
         assert_eq!(t["unsourced"], json!([{"sheet": "Sheet1", "cell": "B12"}]));
-        assert_eq!(marker(&s, "F1"), None);
-        assert_eq!(marker(&s, "B12"), Some(crate::source_state::SourceState::Unsourced));
+        assert!(!marker(&s, "F1"));
+        assert!(!marker(&s, "B12"));
     }
 
     #[test]

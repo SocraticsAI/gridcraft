@@ -1,5 +1,5 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
-//! The Source Inspector: markers on hard-coded values only (hovering one names the value's source;
+//! The Source Inspector: markers on linked hard-coded numbers only (hovering one names the value's source;
 //! a click only selects), and for an active linked value a tint and a source square whose click
 //! tells the host. Formulas have none. The Sources toggle in the ribbon's tab row turns it all off.
 
@@ -11,7 +11,6 @@ use egui_kittest::kittest::Queryable;
 use gridcraft_engine::Session;
 use gridcraft_engine::core::CellRef;
 use gridcraft_engine::model::SourceLink;
-use gridcraft_engine::source_state::SourceState;
 use gridcraft_ui_egui::{Chrome, Services, SheetApp, UiState, grid::Geo, source_marks, theme::Tokens};
 use serde_json::json;
 
@@ -74,7 +73,7 @@ fn tips_name_the_source_of_hard_coded_values_only() {
     let wb = &s.doc().unwrap().wb;
     let tip = |a: &str| source_marks::tip(wb, 0, CellRef::parse(a).unwrap());
     assert_eq!(tip("B2").as_deref(), Some("Heritage Trust Bank Statement September 2019 · Beginning Balance"));
-    assert_eq!(tip("B3").as_deref(), Some("No source for this value"));
+    assert_eq!(tip("B3"), None, "an unlinked number has no marker, so no tooltip");
     assert_eq!(tip("D2").as_deref(), Some("GL Detail · GL Detail!C16102"));
     for formula in ["C2", "C3", "C4", "C5"] {
         assert_eq!(tip(formula), None, "{formula} is a formula");
@@ -93,7 +92,7 @@ fn hovering_a_marker_names_its_source() {
     let at = marker_center(&h, "B3");
     h.input_mut().events.push(Event::PointerMoved(at));
     h.run_steps(2);
-    assert_eq!(tip_shown(&h).as_deref(), Some("No source for this value"));
+    assert_eq!(tip_shown(&h), None, "nothing to hover on an unlinked number");
 }
 
 #[test]
@@ -145,7 +144,7 @@ fn active(h: &Harness) -> String {
 #[test]
 fn clicking_a_marker_only_selects_the_cell() {
     let (mut h, clicks) = with_clicks();
-    for cell in ["D2", "B3"] {
+    for cell in ["D2", "B2"] {
         let at = marker_center(&h, cell);
         click(&mut h, at);
         assert_eq!(active(&h), cell, "a click on the marker selects {cell}");
@@ -189,10 +188,10 @@ fn outlined(h: &Harness, color: egui::Color32) -> Vec<egui::Rect> {
     painted_over_grid(h, color, 1.0, Tokens::light().sourced_mark)
 }
 
-/// The same, outlined in the marker amber (an unsourced number's square).
-fn outlined_amber(h: &Harness, color: egui::Color32) -> Vec<egui::Rect> {
-    painted_over_grid(h, color, 1.0, Tokens::light().unsourced_mark)
-}
+/// The colours of the unsourced treatment that was dropped (amber marker, orange tint): nothing
+/// is painted in them any more.
+const OLD_AMBER: egui::Color32 = egui::Color32::from_rgb(0xE0, 0x9A, 0x1E);
+const OLD_ORANGE: egui::Color32 = egui::Color32::from_rgb(0xFD, 0xEC, 0xD9);
 
 fn painted_over_grid(h: &Harness, color: egui::Color32, stroke: f32, outline: egui::Color32) -> Vec<egui::Rect> {
     let grid = h.state().grid.rect.unwrap();
@@ -363,7 +362,6 @@ fn selecting_a_linked_cell_tints_it_and_shows_its_square_to_the_right() {
     assert_eq!(outlined(&h, t.source_square_fill), [sq.rect], "painted in the chip colour, outlined in the marker blue");
     assert_eq!(t.source_selected_fill, egui::Color32::from_rgb(0xE6, 0xEE, 0xFA), "the light tint, the chip's resting blue");
     assert_eq!(t.source_square_hover, egui::Color32::from_rgb(0xAF, 0xC7, 0xEC));
-    assert!(texts(&h, "?").is_empty(), "an arrow, not a question mark");
 }
 
 /// Where text `s` is painted over the grid.
@@ -382,48 +380,22 @@ fn texts(h: &Harness, s: &str) -> Vec<(egui::Rect, egui::Color32)> {
 }
 
 #[test]
-fn selecting_an_unsourced_number_tints_it_orange_with_a_question_square() {
-    let mut h = harness(session(), Services::default());
-    let t = Tokens::light();
-    select(&mut h, "B3");
-    let b3 = cell_rect(&h, "B3");
-    assert_eq!(rects(&h, t.unsourced_selected_fill), [b3], "the active unsourced number is tinted orange");
-    assert!(rects(&h, t.source_selected_fill).is_empty(), "not blue");
-    let sq = square(&h).expect("a square");
-    assert_eq!((sq.cell.a1().as_str(), sq.state), ("B3", SourceState::Unsourced));
-    assert!(!sq.opens_source());
-    assert!(sq.rect.left() > b3.right() && sq.rect.left() < b3.right() + 6.0, "just right of the cell: {sq:?} {b3:?}");
-    assert_eq!(outlined_amber(&h, t.unsourced_square_fill), [sq.rect], "light orange, outlined in the marker amber");
-    assert!(outlined(&h, t.source_square_fill).is_empty(), "no blue square");
-    let q = texts(&h, "?");
-    assert_eq!(q.len(), 1, "a question mark in the square");
-    assert!(sq.rect.contains(q[0].0.center()) && (q[0].0.center() - sq.rect.center()).length() < 2.0, "centred: {q:?} {sq:?}");
-    assert_eq!(q[0].1, t.unsourced_square_ink);
-    assert_eq!(
-        (t.unsourced_selected_fill, t.unsourced_square_fill, t.unsourced_square_hover, t.unsourced_square_ink),
-        (
-            egui::Color32::from_rgb(0xFD, 0xEC, 0xD9),
-            egui::Color32::from_rgb(0xFD, 0xEC, 0xD9),
-            egui::Color32::from_rgb(0xF9, 0xD3, 0xA8),
-            egui::Color32::from_rgb(0x7A, 0x4E, 0x00)
-        )
-    );
-    assert_eq!(Tokens::dark().unsourced_selected_fill, t.unsourced_selected_fill, "the grid stays light in the dark theme");
-    // Hovering it explains and lights it.
-    h.input_mut().events.push(Event::PointerMoved(sq.rect.center()));
-    h.run_steps(2);
-    assert_eq!(tip_shown(&h).as_deref(), Some("No source for this value"));
-    assert_eq!(outlined_amber(&h, t.unsourced_square_hover), [sq.rect], "the hover orange, still outlined");
-}
-
-#[test]
-fn clicking_an_unsourced_square_does_nothing() {
+fn an_unlinked_number_shows_nothing_even_beside_links() {
     let (mut h, clicks) = with_clicks();
+    let t = Tokens::light();
+    let b3 = marker(&h, "B3").min;
+    assert!(!triangles(&h, t.sourced_mark).contains(&b3) && triangles(&h, OLD_AMBER).is_empty(), "no marker on B3");
     select(&mut h, "B3");
-    let at = square(&h).unwrap().rect.center();
+    assert_eq!(square(&h), None, "no square");
+    for fill in [t.source_selected_fill, OLD_ORANGE] {
+        assert!(rects(&h, fill).is_empty(), "no tint");
+    }
+    assert!(texts(&h, "?").is_empty());
+    // A click just right of it, where a square would be, selects the cell there and tells nobody.
+    let at = cell_rect(&h, "B3").right_center() + egui::vec2(8.0, 0.0);
     click(&mut h, at);
     assert!(clicks.borrow().is_empty(), "nothing to open");
-    assert_eq!(active(&h), "B3", "the square floats over C3 but the click doesn't select it");
+    assert_eq!(active(&h), "C3");
 }
 
 #[test]
@@ -434,23 +406,8 @@ fn a_formula_or_unlinked_text_active_cell_has_no_tint_or_square() {
     for cell in ["C2", "C4", "E3"] {
         select(&mut h, cell);
         assert_eq!(square(&h), None, "{cell}");
-        for fill in [t.source_selected_fill, t.unsourced_selected_fill] {
-            assert!(rects(&h, fill).is_empty(), "{cell}");
-        }
+        assert!(rects(&h, t.source_selected_fill).is_empty(), "{cell}");
     }
-}
-
-#[test]
-fn turning_the_inspector_off_hides_the_unsourced_tint_and_square() {
-    let mut h = harness(session(), Services::default());
-    select(&mut h, "B3");
-    assert!(square(&h).is_some());
-    h.state_mut().run("view.sourceInspector", json!({"on": false})).unwrap();
-    h.run_steps(2);
-    assert_eq!(square(&h), None);
-    let t = Tokens::light();
-    assert!(rects(&h, t.unsourced_selected_fill).is_empty() && outlined_amber(&h, t.unsourced_square_fill).is_empty());
-    assert!(texts(&h, "?").is_empty());
 }
 
 #[test]
@@ -458,13 +415,8 @@ fn only_the_active_cell_of_a_range_is_inspected() {
     let mut h = harness(session(), Services::default());
     h.state_mut().session.execute("selection.set", json!({"range": "B2:D3", "active": "B3"})).unwrap();
     h.run_steps(2);
-    assert_eq!(
-        square(&h).map(|s| (s.cell.a1(), s.state)),
-        Some(("B3".to_string(), SourceState::Unsourced)),
-        "B3 is unsourced, though B2 and D2 are linked"
-    );
+    assert_eq!(square(&h), None, "B3 is unlinked, though B2 and D2 in the range are linked");
     assert!(rects(&h, Tokens::light().source_selected_fill).is_empty());
-    assert_eq!(rects(&h, Tokens::light().unsourced_selected_fill), [cell_rect(&h, "B3")]);
     h.state_mut().session.execute("selection.set", json!({"range": "B2:D3", "active": "D2"})).unwrap();
     h.run_steps(2);
     assert_eq!(square(&h).map(|s| s.cell.a1()).as_deref(), Some("D2"));
@@ -543,7 +495,7 @@ fn turning_the_inspector_off_hides_markers_tint_square_and_tips() {
     h.state_mut().run("view.sourceInspector", json!({"on": false})).unwrap();
     h.run_steps(2);
     assert_eq!(square(&h), None);
-    for color in [t.sourced_mark, t.unsourced_mark] {
+    for color in [t.sourced_mark, OLD_AMBER] {
         assert!(triangles(&h, color).is_empty(), "no markers");
     }
     assert!(rects(&h, t.source_selected_fill).is_empty() && outlined(&h, t.source_square_fill).is_empty(), "no tint, no square");
@@ -622,15 +574,14 @@ fn markers_are_painted_in_the_top_left_corner_in_normal_view_only() {
     let mut h = harness(session(), Services::default());
     let t = Tokens::light();
     let blue = triangles(&h, t.sourced_mark);
-    let amber = triangles(&h, t.unsourced_mark);
     for cell in ["B2", "D2"] {
         assert!(blue.contains(&marker(&h, cell).min), "{cell} has a sourced marker: {blue:?}");
     }
-    assert_eq!(amber, [marker(&h, "B3").min], "the unlinked number has an unsourced marker");
+    assert!(triangles(&h, OLD_AMBER).is_empty(), "the unlinked number B3 has no marker");
     assert_eq!(blue.len(), 2, "formulas (C2:C5) have no marker: {blue:?}");
     h.state_mut().run("view.pageLayout", json!({})).unwrap();
     h.run_steps(4);
-    assert!(triangles(&h, t.sourced_mark).is_empty() && triangles(&h, t.unsourced_mark).is_empty(), "no markers in Page Layout view");
+    assert!(triangles(&h, t.sourced_mark).is_empty(), "no markers in Page Layout view");
 }
 
 #[test]
@@ -712,15 +663,12 @@ fn a_linked_label_beside_a_linked_figure_shows_nothing() {
     let blue = triangles(&h, t.sourced_mark);
     assert!(blue.contains(&marker(&h, "B2").min), "the figure beside it is blue");
     assert!(!blue.contains(&marker(&h, "A2").min), "the label has no marker");
-    assert!(!triangles(&h, t.unsourced_mark).contains(&marker(&h, "A2").min));
     let at = marker_center(&h, "A2");
     h.input_mut().events.push(Event::PointerMoved(at));
     h.run_steps(2);
     assert_eq!(tip_shown(&h), None);
     select(&mut h, "A2");
     assert_eq!(square(&h), None, "no square for a label");
-    for fill in [t.source_selected_fill, t.unsourced_selected_fill] {
-        assert!(rects(&h, fill).is_empty(), "no tint for a label");
-    }
+    assert!(rects(&h, t.source_selected_fill).is_empty(), "no tint for a label");
     assert!(h.state().session.active().unwrap().wb.active().unwrap().sources.contains_key(&CellRef::parse("A2").unwrap()), "the link stays");
 }

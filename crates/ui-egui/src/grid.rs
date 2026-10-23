@@ -745,10 +745,10 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     // Everything up to the headers is painted in logical (left-to-right) coordinates.
     let mirror_from = painter.add(egui::Shape::Noop);
     let mut cf = CfCache::new();
-    // Source Inspector: the active linked (or unsourced) cell's tint and square (lit under the
-    // pointer unless the fill handle, which wins, is there too).
-    let source_cell = crate::source_marks::active_inspected(app, &geo, si, sh, &sel);
-    let square = source_cell.and_then(|(c, state)| crate::source_marks::SourceSquare::new(&geo, sh, c, state));
+    // Source Inspector: the active linked cell's tint and source square (lit under the pointer
+    // unless the fill handle, which wins, is there too).
+    let source_cell = crate::source_marks::active_linked(app, &geo, si, sh, &sel);
+    let square = source_cell.and_then(|c| crate::source_marks::SourceSquare::new(&geo, sh, c));
     app.grid.source_square = square;
     let square_hot = square.is_some_and(|sq| {
         app.grid.drag == Drag::None
@@ -818,7 +818,7 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
 /// What the Source Inspector paints for the active cell: its tint, and its source square (and
 /// whether the pointer is on it).
 struct SourceInspect {
-    tint: Option<(CellRef, gridcraft_engine::source_state::SourceState)>,
+    tint: Option<CellRef>,
     square: Option<(crate::source_marks::SourceSquare, bool)>,
 }
 
@@ -858,7 +858,7 @@ fn paint_panes(
             continue;
         }
         let p = painter.with_clip_rect(*clip);
-        let tint = inspect.tint.map(|(c, state)| (c, crate::source_marks::tint(state, t)));
+        let tint = inspect.tint.map(|c| (c, t.source_selected_fill));
         paint_quadrant_tinted(&p, geo, wb, si, sh, *rows, *cols, cf, t, tint);
         if app.ui.source_inspector
             && let Some(d) = app.session.active()
@@ -2177,18 +2177,15 @@ fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Response, geo: &
         if app.editor.is_some() && !app.commit_edit(0, 0, false, false) {
             return;
         }
-        // A click on a linked value's source square hands the active cell to the host, which opens
-        // its source; an unsourced number's square has nothing to open. Either way the selection
-        // stays. (Source markers are indicators: a click on one selects as usual.)
+        // A click on the source square hands the active cell to the host, which opens its source;
+        // the selection stays. (Source markers are indicators: a click on one selects as usual.)
         if primary_clicked
             && !mods.any()
             && on_square(p)
             && let Some(sq) = square
         {
-            if sq.opens_source() {
-                app.session.ui_requests.push(gridcraft_engine::UiRequest::SourceClick { sheet: sh.name.clone(), cell: sq.cell.a1() });
-                app.after_engine();
-            }
+            app.session.ui_requests.push(gridcraft_engine::UiRequest::SourceClick { sheet: sh.name.clone(), cell: sq.cell.a1() });
+            app.after_engine();
             app.grid.last_click = None;
             return;
         }

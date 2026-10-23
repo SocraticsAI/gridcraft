@@ -1,17 +1,16 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
-//! The Source Inspector (the Sources toggle in the ribbon's tab row, on by default): cell source
-//! markers, a small triangle in the top-left corner of a hard-coded number that has a source link (`Tokens::sourced_mark`) or of
-//! a hard-coded number that hasn't (`Tokens::unsourced_mark`), with a tooltip; and for an active
-//! cell holding a linked value, a tint over the cell (`Tokens::source_selected_fill`) and a source
-//! square beside it whose click goes to the host, or for an active unsourced number, an orange tint
-//! (`Tokens::unsourced_selected_fill`) and a square with a "?" whose click does nothing. Formulas
-//! have none. Normal view only: Page
-//! Layout view shows nothing. The markers are indicators only; the square is what is clicked.
+//! The Source Inspector (the Sources toggle in the ribbon's tab row, on by default): a cell source
+//! marker, a small triangle (`Tokens::sourced_mark`) in the top-left corner of a hard-coded number
+//! that has a source link, with a tooltip naming the source; and for an active cell holding a
+//! linked number, a tint over the cell (`Tokens::source_selected_fill`) and a source square beside
+//! it whose click goes to the host. Unlinked numbers, text and formulas show nothing. Normal view
+//! only: Page Layout view shows nothing. The markers are indicators only; the square is what is
+//! clicked.
 
 use egui::{Painter, Pos2, Rect, Stroke, pos2, vec2};
 use gridcraft_engine::core::{CellRef, RangeRef};
 use gridcraft_engine::model::{Sheet, SourceLink, Workbook};
-use gridcraft_engine::source_state::{SourceState, source_state, source_states_in};
+use gridcraft_engine::source_state::{is_sourced, sourced_in};
 use gridcraft_engine::{DocState, Selection};
 
 use crate::SheetApp;
@@ -55,16 +54,16 @@ pub fn paint_quadrant(d: &DocState, p: &Painter, geo: &Geo, si: usize, sh: &Shee
     }
     let range = RangeRef::new(CellRef::new(rows.0, cols.0), CellRef::new(rows.1, cols.1));
     let s = marker_size(geo.z);
-    for (c, state) in source_states_in(&d.wb, si, range) {
+    for c in sourced_in(&d.wb, si, range) {
         if sh.row_height(c.row) == 0.0 || sh.col_width(c.col) == 0.0 {
             continue;
         }
         let Some(r) = cell_area(geo, sh, c) else { continue };
-        let color = match state {
-            SourceState::Sourced => t.sourced_mark,
-            SourceState::Unsourced => t.unsourced_mark,
-        };
-        p.add(egui::Shape::convex_polygon(vec![r.left_top(), pos2(r.left() + s, r.top()), pos2(r.left(), r.top() + s)], color, Stroke::NONE));
+        p.add(egui::Shape::convex_polygon(
+            vec![r.left_top(), pos2(r.left() + s, r.top()), pos2(r.left(), r.top() + s)],
+            t.sourced_mark,
+            Stroke::NONE,
+        ));
     }
 }
 
@@ -75,45 +74,37 @@ pub fn hit(geo: &Geo, d: &DocState, si: usize, sh: &Sheet, p: Pos2) -> Option<Ce
     }
     let c = geo.cell_at(sh, p);
     let anchor = sh.merges.iter().find(|m| m.contains(c)).map_or(c, |m| m.start);
-    source_state(&d.wb, si, anchor)?;
+    if !is_sourced(&d.wb, si, anchor) {
+        return None;
+    }
     marker_rect(geo, sh, anchor)?.contains(p).then_some(anchor)
 }
 
-/// The active cell (its merged area's anchor) and its state when the Source Inspector inspects it:
-/// the inspector is on, the view is Normal, no cell is being edited and it holds a hard-coded value
-/// with a marker (a linked or an unsourced number). It gets the tint and the square of its state.
-pub fn active_inspected(app: &SheetApp, geo: &Geo, si: usize, sh: &Sheet, sel: &Selection) -> Option<(CellRef, SourceState)> {
+/// The active cell (its merged area's anchor) when the Source Inspector shows it as linked: the
+/// inspector is on, the view is Normal, no cell is being edited and it holds a linked hard-coded
+/// number. It gets the tint and the source square.
+pub fn active_linked(app: &SheetApp, geo: &Geo, si: usize, sh: &Sheet, sel: &Selection) -> Option<CellRef> {
     if !app.ui.source_inspector || geo.paper.is_some() || app.editor.is_some() {
         return None;
     }
     let d = app.session.active()?;
     let anchor = sh.merge_at(sel.active).map_or(sel.active, |m| m.start);
-    Some((anchor, source_state(&d.wb, si, anchor)?))
+    is_sourced(&d.wb, si, anchor).then_some(anchor)
 }
 
-/// The tint over an active inspected cell in `state`.
-pub fn tint(state: SourceState, t: &Tokens) -> egui::Color32 {
-    match state {
-        SourceState::Sourced => t.source_selected_fill,
-        SourceState::Unsourced => t.unsourced_selected_fill,
-    }
-}
-
-/// The square beside an active inspected cell, in logical coordinates: `rect` is where it is
+/// The source square beside an active linked cell, in logical coordinates: `rect` is where it is
 /// painted and `clip` the part of the cells it may show in (the panes of its row and those right of
-/// its column, so it never covers the headers or the frozen columns of a scrolled cell). A linked
-/// value's (`Sourced`) opens its source when clicked; an unsourced number's only explains.
+/// its column, so it never covers the headers or the frozen columns of a scrolled cell).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SourceSquare {
     pub cell: CellRef,
-    pub state: SourceState,
     pub rect: Rect,
     pub clip: Rect,
 }
 
 impl SourceSquare {
     /// Where it is painted, and the cell it belongs to.
-    pub fn new(geo: &Geo, sh: &Sheet, cell: CellRef, state: SourceState) -> Option<SourceSquare> {
+    pub fn new(geo: &Geo, sh: &Sheet, cell: CellRef) -> Option<SourceSquare> {
         if geo.hidden_under_frozen(sh, cell) || sh.row_height(cell.row) <= 0.0 {
             return None;
         }
@@ -138,7 +129,7 @@ impl SourceSquare {
         } else {
             right
         };
-        let square = SourceSquare { cell, state, rect, clip };
+        let square = SourceSquare { cell, rect, clip };
         (square.visible().is_positive() && square.visible().is_finite()).then_some(square)
     }
 
@@ -152,27 +143,14 @@ impl SourceSquare {
         self.visible().contains(p)
     }
 
-    /// Whether a click on it goes to the host (a linked value's square).
-    pub fn opens_source(&self) -> bool {
-        self.state == SourceState::Sourced
-    }
-
-    /// Paints the square into the pane `p` paints, outlined in its marker's colour, in the hover
-    /// colour while `hot`: an up-right arrow for a linked value, a "?" for an unsourced number.
+    /// Paints the square into the pane `p` paints, outlined in the marker blue, in the hover
+    /// colour while `hot`.
     pub fn paint(&self, p: &Painter, hot: bool, t: &Tokens) {
         let p = p.with_clip_rect(p.clip_rect().intersect(self.clip));
         let side = self.rect.width();
-        let (fill, hover, outline, ink) = match self.state {
-            SourceState::Sourced => (t.source_square_fill, t.source_square_hover, t.sourced_mark, t.source_square_ink),
-            SourceState::Unsourced => (t.unsourced_square_fill, t.unsourced_square_hover, t.unsourced_mark, t.unsourced_square_ink),
-        };
-        p.rect(self.rect, (side * 0.2).clamp(2.0, 4.0), if hot { hover } else { fill }, Stroke::new(1.0, outline), egui::StrokeKind::Inside);
-        match self.state {
-            SourceState::Sourced => icons::paint(&p, self.rect.shrink(side * 0.2), Icon::ArrowUpRight, ink),
-            SourceState::Unsourced => {
-                p.text(self.rect.center(), egui::Align2::CENTER_CENTER, "?", crate::theme::ui_bold(side * 0.7), ink);
-            }
-        }
+        let fill = if hot { t.source_square_hover } else { t.source_square_fill };
+        p.rect(self.rect, (side * 0.2).clamp(2.0, 4.0), fill, Stroke::new(1.0, t.sourced_mark), egui::StrokeKind::Inside);
+        icons::paint(&p, self.rect.shrink(side * 0.2), Icon::ArrowUpRight, t.source_square_ink);
     }
 }
 
@@ -185,11 +163,11 @@ pub fn label(link: &SourceLink) -> String {
     if place.is_empty() { stem } else { format!("{stem} · {place}") }
 }
 
-/// The tooltip of the marker (or source square) of `c`: its source, or that it has none. `None`
-/// for a cell without a marker (a formula, text without a link).
+/// The tooltip of the marker (or source square) of `c`: its source. `None` for a cell without a
+/// marker (an unlinked number, text, a formula).
 pub fn tip(wb: &Workbook, si: usize, c: CellRef) -> Option<String> {
-    match source_state(wb, si, c)? {
-        SourceState::Sourced => wb.sheet(si)?.sources.get(&c).map(label),
-        SourceState::Unsourced => Some("No source for this value".into()),
+    if !is_sourced(wb, si, c) {
+        return None;
     }
+    wb.sheet(si)?.sources.get(&c).map(label)
 }
