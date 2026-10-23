@@ -29,11 +29,11 @@ carries a notice on its first line.
    saved in the `.xlsx` as a custom XML part (namespace `urn:socratics:sources:1`) and read back. New
    commands `source.set`, `source.get`, `source.clear` and `source.trace` (a formula traced through its
    references, across sheets, 3-D references, names and tables, to linked values). Only hard-coded
-   values carry a marker in their top-left corner: a linked value is shown as sourced, an unlinked number
-   as unsourced, with a tooltip naming the source or saying there is none; formulas (and spilled values)
+   figures carry a marker in their top-left corner: a linked number is shown as sourced, an unlinked
+   number as unsourced, and linked text or logicals (labels, headers) show nothing, with a tooltip naming the source or saying there is none; formulas (and spilled values)
    are traced by `source.trace` but show no marker. The markers are indicators only (a click on one
    just selects the cell). When the active cell (only the active cell, even in a range) holds a linked
-   value, it is tinted and a source square with an up-right arrow floats just right of it (left of it
+   number, it is tinted and a source square with an up-right arrow floats just right of it (left of it
    when that would be wholly off the pane; past a list-validation arrow; under the fill handle, which
    wins). Hovering the square names the source; clicking it raises `UiRequest::SourceClick` for the
    active cell, which goes to the host's `Services::source_click`, and leaves the selection as it is.

@@ -699,3 +699,28 @@ fn first_frame_after_an_edit_on_a_large_model() {
         "idle frame {idle:?}; first frame after an edit: top {top:?} (again {top_again:?}), bottom of the running total {bottom:?}; {marks} blue markers in view"
     );
 }
+
+#[test]
+fn a_linked_label_beside_a_linked_figure_shows_nothing() {
+    let mut s = session();
+    s.execute("cell.set", json!({"cell": "A2", "input": "Beginning Balance"})).unwrap();
+    s.execute("source.set", json!({"range": "A2", "links": [[{"file": STATEMENT, "locator": "ACCOUNT SUMMARY", "storeRow": "x"}]]})).unwrap();
+    let mut h = harness(s, Services::default());
+    let t = Tokens::light();
+    let wb = &h.state().session.active().unwrap().wb;
+    assert_eq!(source_marks::tip(wb, 0, CellRef::parse("A2").unwrap()), None, "no tooltip for a label");
+    let blue = triangles(&h, t.sourced_mark);
+    assert!(blue.contains(&marker(&h, "B2").min), "the figure beside it is blue");
+    assert!(!blue.contains(&marker(&h, "A2").min), "the label has no marker");
+    assert!(!triangles(&h, t.unsourced_mark).contains(&marker(&h, "A2").min));
+    let at = marker_center(&h, "A2");
+    h.input_mut().events.push(Event::PointerMoved(at));
+    h.run_steps(2);
+    assert_eq!(tip_shown(&h), None);
+    select(&mut h, "A2");
+    assert_eq!(square(&h), None, "no square for a label");
+    for fill in [t.source_selected_fill, t.unsourced_selected_fill] {
+        assert!(rects(&h, fill).is_empty(), "no tint for a label");
+    }
+    assert!(h.state().session.active().unwrap().wb.active().unwrap().sources.contains_key(&CellRef::parse("A2").unwrap()), "the link stays");
+}

@@ -377,8 +377,9 @@ pub fn trace(wb: &Workbook, sheet: usize, cell: CellRef) -> SourceTrace {
     t.out
 }
 
-/// A cell's marker: a hard-coded value with a source link (blue), or a hard-coded number without
-/// one (amber). Formulas, spilled values and other cells get no marker.
+/// A cell's marker: a hard-coded number with a source link (blue), or one without (amber). Only
+/// figures are marked: linked text and logicals (labels, headers), formulas, spilled values and
+/// other cells get no marker.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SourceState {
     Sourced,
@@ -390,10 +391,12 @@ fn has_links(wb: &Workbook) -> bool {
     wb.sheets.iter().any(|s| !s.sources.is_empty())
 }
 
-/// The marker of `c` on `sh`, read from the cell alone: a formula has none whatever it reads.
+/// The marker of `c` on `sh`, read from the cell alone: a formula has none whatever it reads, and
+/// a linked value only when it is a number.
 fn state_on(sh: &Sheet, c: CellRef) -> Option<SourceState> {
     match classify(sh, c) {
-        CellKind::Linked(_) => Some(SourceState::Sourced),
+        CellKind::Linked(_) if sh.cell(c).is_some_and(|x| x.value.is_number()) => Some(SourceState::Sourced),
+        CellKind::Linked(_) => None,
         CellKind::Number => Some(SourceState::Unsourced),
         CellKind::Formula(_) | CellKind::Spilled(_) | CellKind::Other => None,
     }
@@ -461,19 +464,37 @@ mod tests {
         let mut s = s();
         s.execute("range.setValues", json!({"range": "A1", "values": [[100, 7, "text", true, "cash"]]})).unwrap();
         s.execute("source.set", json!({"range": "A1", "links": [[link("opening")]]})).unwrap();
-        s.execute("source.set", json!({"range": "E1", "links": [[link("label")]]})).unwrap();
+        s.execute("source.set", json!({"range": "C1:E1", "links": [[link("label"), link("flag"), link("cash")]]})).unwrap();
         for (cell, input) in [("F1", "=A1*2"), ("G1", "=A1+B1"), ("H1", "=UPPER(C1)"), ("I1", "=INDIRECT(\"A1\")"), ("J1", "=F1"), ("K1", "=1+2")] {
             s.execute("cell.set", json!({"cell": cell, "input": input})).unwrap();
         }
         assert_eq!(state(&s, "A1"), Some(SourceState::Sourced), "a linked number");
         assert_eq!(state(&s, "B1"), Some(SourceState::Unsourced), "an unlinked number");
-        assert_eq!(state(&s, "C1"), None, "unlinked text");
-        assert_eq!(state(&s, "D1"), None, "an unlinked logical");
-        assert_eq!(state(&s, "E1"), Some(SourceState::Sourced), "linked text");
+        assert_eq!(state(&s, "C1"), None, "linked text: a label, not a figure");
+        assert_eq!(state(&s, "D1"), None, "a linked logical");
+        assert_eq!(state(&s, "E1"), None, "linked text");
         for c in ["F1", "G1", "H1", "I1", "J1", "K1", "Z9"] {
             assert_eq!(state(&s, c), None, "{c}");
         }
-        assert_eq!(shown(&s, "A1:K1"), ["A1", "B1", "E1"]);
+        assert_eq!(shown(&s, "A1:K1"), ["A1", "B1"]);
+        s.execute("source.clear", json!({"range": "C1:E1"})).unwrap();
+        for c in ["C1", "D1", "E1"] {
+            assert_eq!(state(&s, c), None, "unlinked {c}");
+        }
+        let wb = &s.doc().unwrap().wb;
+        assert!(wb.active().unwrap().sources.contains_key(&CellRef::parse("A1").unwrap()), "only the text links went");
+    }
+
+    #[test]
+    fn a_linked_label_beside_a_linked_figure_has_no_marker() {
+        let mut s = s();
+        s.execute("range.setValues", json!({"range": "A1", "values": [["Beginning Balance", 1318609]]})).unwrap();
+        s.execute("source.set", json!({"range": "A1:B1", "links": [[link("label"), link("balance")]]})).unwrap();
+        assert_eq!(state(&s, "A1"), None, "the label");
+        assert_eq!(state(&s, "B1"), Some(SourceState::Sourced), "the figure");
+        assert_eq!(shown(&s, "A1:B1"), ["B1"]);
+        // The link is still stored and read back.
+        assert_eq!(s.execute("source.get", json!({"cell": "A1"})).unwrap()["link"]["locator"], "label");
     }
 
     #[test]

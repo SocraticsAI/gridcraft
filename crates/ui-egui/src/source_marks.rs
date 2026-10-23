@@ -1,6 +1,6 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
 //! The Source Inspector (the Sources toggle in the ribbon's tab row, on by default): cell source
-//! markers, a small triangle in the top-left corner of a hard-coded value that has a source link (`Tokens::sourced_mark`) or of
+//! markers, a small triangle in the top-left corner of a hard-coded number that has a source link (`Tokens::sourced_mark`) or of
 //! a hard-coded number that hasn't (`Tokens::unsourced_mark`), with a tooltip; and for an active
 //! cell holding a linked value, a tint over the cell (`Tokens::source_selected_fill`) and a source
 //! square beside it whose click goes to the host, or for an active unsourced number, an orange tint
@@ -81,7 +81,7 @@ pub fn hit(geo: &Geo, d: &DocState, si: usize, sh: &Sheet, p: Pos2) -> Option<Ce
 
 /// The active cell (its merged area's anchor) and its state when the Source Inspector inspects it:
 /// the inspector is on, the view is Normal, no cell is being edited and it holds a hard-coded value
-/// with a marker (linked, or an unsourced number). It gets the tint and the square of its state.
+/// with a marker (a linked or an unsourced number). It gets the tint and the square of its state.
 pub fn active_inspected(app: &SheetApp, geo: &Geo, si: usize, sh: &Sheet, sel: &Selection) -> Option<(CellRef, SourceState)> {
     if !app.ui.source_inspector || geo.paper.is_some() || app.editor.is_some() {
         return None;
