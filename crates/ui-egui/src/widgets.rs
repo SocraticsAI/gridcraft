@@ -1,4 +1,3 @@
-// Modified by Socratics, 2026: adds the large toggle button (View ▸ Source Inspector). See MODIFICATIONS.md.
 //! Ribbon-style widgets: icon buttons, large buttons, split buttons, colour palettes, and the
 //! message box / toast overlays.
 
@@ -44,19 +43,6 @@ pub fn toggle_button(ui: &mut Ui, icon: Icon, on: bool, tip: &str) -> Response {
 
 /// Large ribbon button: 32px icon over a one- or two-line label.
 pub fn big_button(ui: &mut Ui, icon: Icon, label: &str, tip: &str, dropdown: bool) -> Response {
-    big(ui, icon, label, tip, dropdown, false)
-}
-
-/// A large ribbon button that stays pressed while `on` (like [`toggle_button`], at full size).
-/// Named (on one line) and checked for assistive technology.
-pub fn big_toggle_button(ui: &mut Ui, icon: Icon, label: &str, tip: &str, on: bool) -> Response {
-    let resp = big(ui, icon, label, tip, false, on);
-    let name = tr(ui, label).replace('\n', " ");
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, &name));
-    resp
-}
-
-fn big(ui: &mut Ui, icon: Icon, label: &str, tip: &str, dropdown: bool, on: bool) -> Response {
     let t = Tokens::get(ui.ctx());
     let font = theme::ui_font(11.5);
     let label = tr(ui, label);
@@ -66,10 +52,7 @@ fn big(ui: &mut Ui, icon: Icon, label: &str, tip: &str, dropdown: bool, on: bool
     let text_w = lines.iter().enumerate().map(|(i, line)| line.size().x + if i + 1 == lines.len() { arrow_space } else { 0.0 }).fold(0.0, f32::max);
     let w = (text_w + 12.0).max(44.0);
     let (rect, resp) = ui.allocate_exact_size(vec2(w, 72.0), Sense::click());
-    if on {
-        ui.painter().rect_filled(rect, 5.0, t.pressed);
-        ui.painter().rect_stroke(rect, 5.0, Stroke::new(1.0, t.separator), StrokeKind::Inside);
-    } else if resp.is_pointer_button_down_on() {
+    if resp.is_pointer_button_down_on() {
         ui.painter().rect_filled(rect, 5.0, t.pressed);
     } else if resp.hovered() {
         ui.painter().rect_filled(rect, 5.0, t.hover);

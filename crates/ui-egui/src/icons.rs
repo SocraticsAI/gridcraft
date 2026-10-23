@@ -132,7 +132,7 @@ pub enum Icon {
     OpenFolder,
     Info,
     Print,
-    /// View ▸ Source Inspector: a page with a value marked in its top-left corner, and an arrow
+    /// The Source Inspector toggle in the ribbon's tab row: a page with a value marked in its top-left corner, and an arrow
     /// up and to the right out of it (to the source).
     SourceInspect,
     /// An arrow up and to the right (the source square beside an active linked cell).

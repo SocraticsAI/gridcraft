@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch, Clear Sources and View ▸ Sources. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch, Clear Sources and the Sources toggle in the tab row. See MODIFICATIONS.md.
 //! Title bar (Quick Access Toolbar), ribbon tabs and ribbon groups, and keyboard shortcuts.
 
 use egui::{Align2, Color32, Key, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
@@ -9,7 +9,7 @@ use crate::SheetApp;
 use crate::icons::{self, Icon};
 use crate::keytips::keytip_table;
 use crate::theme::{self, Tokens};
-use crate::widgets::{big_button, big_toggle_button, color_palette, icon_button, small_button, split_button, toggle_button};
+use crate::widgets::{big_button, color_palette, icon_button, small_button, split_button, toggle_button};
 
 pub const TABS: &[&str] = &["Home", "Insert", "Draw", "Page Layout", "Formulas", "Data", "Review", "View", "Automate"];
 
@@ -182,6 +182,8 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                     }
                     let mut tabs: Vec<&str> = TABS.iter().copied().filter(|tab| app.chrome.automate || *tab != "Automate").collect();
                     let ctx_tabs = contextual_tabs(app);
+                    // The Sources toggle follows the last standard tab, before any contextual tab.
+                    let sources_after = tabs.last().copied();
                     tabs.extend(ctx_tabs.iter());
                     for tab in tabs {
                         let active = app.ui.ribbon_tab == tab;
@@ -221,6 +223,9 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                         {
                             keytip(app, ui, sequence, pos2(r.center().x, r.bottom() - 1.0));
                         }
+                        if Some(tab) == sources_after {
+                            sources_toggle(app, ui);
+                        }
                     }
                 });
             });
@@ -255,6 +260,44 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                 });
             });
         });
+}
+
+/// The Source Inspector toggle in the tab row (`view.sourceInspector`): a button, not a tab, so a
+/// click neither switches tabs nor collapses the ribbon. Filled in the source tint while on.
+fn sources_toggle(app: &mut SheetApp, ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    let lang = app.ui.language;
+    let on = app.ui.source_inspector;
+    let font = theme::ui_font(13.5);
+    let label = lang.tr("Sources");
+    let ink = if on { t.source_square_ink } else { t.text_dim };
+    let text = ui.painter().layout_no_wrap(label.to_string(), font, ink);
+    let icon = 16.0;
+    let (pad, gap) = (9.0, 5.0);
+    ui.add_space(6.0);
+    let (r, resp) = ui.allocate_exact_size(vec2(pad + icon + gap + text.size().x + pad, 30.0), Sense::click());
+    let pill = r.shrink2(vec2(0.0, 4.0));
+    if on {
+        ui.painter().rect_filled(pill, 5.0, t.source_selected_fill);
+        if resp.hovered() {
+            ui.painter().rect_stroke(pill, 5.0, Stroke::new(1.0, t.sourced_mark), StrokeKind::Inside);
+        }
+    } else if resp.is_pointer_button_down_on() {
+        ui.painter().rect_filled(pill, 5.0, t.pressed);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(pill, 5.0, t.hover);
+    }
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(pos2(pill.left() + pad + icon / 2.0, pill.center().y), vec2(icon, icon)),
+        Icon::SourceInspect,
+        ink,
+    );
+    ui.painter().galley(pos2(pill.left() + pad + icon + gap, pill.center().y - text.size().y / 2.0), text, ink);
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label));
+    if resp.on_hover_text(lang.tr("Source Inspector: show cell sources")).clicked() {
+        act(app, "view.sourceInspector", json!({}));
+    }
 }
 
 /// The File tab opens the Backstage view (New, Open, Info, Save As, Print, Export, Options…), like
@@ -2241,13 +2284,6 @@ fn view(app: &mut SheetApp, ui: &mut Ui) {
             },
         );
     });
-    // Sources: the Source Inspector shows where hard-coded values come from.
-    sep(ui);
-    let on = app.ui.source_inspector;
-    let tip = "Show source markers on hard-coded values, and the source of the selected linked value";
-    if big_toggle_button(ui, Icon::SourceInspect, "Source\nInspector", tip, on).clicked() {
-        act(app, "view.sourceInspector", json!({"on": !on}));
-    }
 }
 
 fn automate(app: &mut SheetApp, ui: &mut Ui) {

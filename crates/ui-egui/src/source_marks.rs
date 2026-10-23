@@ -1,6 +1,6 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
-//! The Source Inspector (View ▸ Sources, on by default): cell source markers, a small triangle in
-//! the top-left corner of a hard-coded value that has a source link (`Tokens::sourced_mark`) or of
+//! The Source Inspector (the Sources toggle in the ribbon's tab row, on by default): cell source
+//! markers, a small triangle in the top-left corner of a hard-coded value that has a source link (`Tokens::sourced_mark`) or of
 //! a hard-coded number that hasn't (`Tokens::unsourced_mark`), with a tooltip; and for an active
 //! cell holding a linked value, a tint over the cell (`Tokens::source_selected_fill`) and a source
 //! square beside it whose click goes to the host. Formulas have none. Normal view only: Page

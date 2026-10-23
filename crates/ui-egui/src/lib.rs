@@ -62,7 +62,7 @@ pub struct UiState {
     /// Enable AutoComplete for cell values (File ▸ Options ▸ Editing): typed text is completed
     /// from the one matching entry in the same column.
     pub autocomplete: bool,
-    /// Source Inspector (View ▸ Sources): source markers on hard-coded values, and for an active
+    /// Source Inspector (the Sources toggle in the ribbon's tab row): source markers on hard-coded values, and for an active
     /// linked value its tint and source square. Off hides them all; the links stay in the model.
     pub source_inspector: bool,
     pub recent: Vec<String>,

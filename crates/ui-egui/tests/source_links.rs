@@ -1,7 +1,7 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
 //! The Source Inspector: markers on hard-coded values only (hovering one names the value's source;
 //! a click only selects), and for an active linked value a tint and a source square whose click
-//! tells the host. Formulas have none. View ▸ Source Inspector turns it all off.
+//! tells the host. Formulas have none. The Sources toggle in the ribbon's tab row turns it all off.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -11,7 +11,7 @@ use egui_kittest::kittest::Queryable;
 use gridcraft_engine::Session;
 use gridcraft_engine::core::CellRef;
 use gridcraft_engine::model::SourceLink;
-use gridcraft_ui_egui::{Services, SheetApp, UiState, grid::Geo, source_marks, theme::Tokens};
+use gridcraft_ui_egui::{Chrome, Services, SheetApp, UiState, grid::Geo, source_marks, theme::Tokens};
 use serde_json::json;
 
 type Harness = egui_kittest::Harness<'static, SheetApp>;
@@ -177,13 +177,15 @@ fn square(h: &Harness) -> Option<source_marks::SourceSquare> {
     h.state().grid.source_square
 }
 
-/// The painted rectangles filled with `color`.
+/// The rectangles filled with `color` painted over the grid (the ribbon's Sources toggle shares
+/// the tint colour).
 fn rects(h: &Harness, color: egui::Color32) -> Vec<egui::Rect> {
+    let grid = h.state().grid.rect.unwrap();
     h.output()
         .shapes
         .iter()
         .filter_map(|s| match &s.shape {
-            egui::Shape::Rect(r) if r.fill == color => Some(r.rect),
+            egui::Shape::Rect(r) if r.fill == color && grid.intersects(r.rect) => Some(r.rect),
             _ => None,
         })
         .collect()
@@ -204,15 +206,75 @@ fn the_inspector_is_on_by_default_toggles_and_persists() {
     assert!(h.state().ui.source_inspector);
 }
 
+/// Where the ribbon's tab row paints tab label `label`.
+fn tab_label(h: &Harness, label: &str) -> egui::Rect {
+    let ribbon_top = h.state().grid.rect.unwrap().top();
+    h.output()
+        .shapes
+        .iter()
+        .find_map(|s| match &s.shape {
+            egui::Shape::Text(t) if t.galley.text() == label && t.pos.y < ribbon_top => Some(t.visual_bounding_rect()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no {label} tab"))
+}
+
+/// The tab row's Sources toggle sits right after `last` (the last standard tab), level with it.
+fn assert_sources_after(h: &Harness, last: &str) {
+    let toggle = h.get_by_label("Sources").rect();
+    let tab = tab_label(h, last);
+    assert!(toggle.left() > tab.right() && toggle.left() < tab.right() + 24.0, "right after {last}: {toggle:?} {tab:?}");
+    assert!((toggle.center().y - tab.center().y).abs() < 3.0, "in the tab row: {toggle:?} {tab:?}");
+}
+
 #[test]
-fn the_ribbon_toggle_sits_at_the_end_of_the_view_tab() {
+fn the_sources_toggle_sits_in_the_tab_row_after_the_last_tab() {
+    let h = harness(session(), Services::default());
+    assert_sources_after(&h, "Automate");
+    let mut h = harness(session(), Services::default());
+    h.state_mut().chrome = Chrome { automate: false, ..Chrome::default() };
+    h.run_steps(2);
+    assert_sources_after(&h, "View");
+    // A contextual tab (Table Design) comes after the toggle, which stays put.
+    h.state_mut().run("insert.table", json!({"range": "F1:G3"})).unwrap();
+    h.state_mut().run("selection.set", json!({"range": "F2"})).unwrap();
+    h.run_steps(2);
+    assert_sources_after(&h, "View");
+    assert!(tab_label(&h, "Table Design").left() > h.get_by_label("Sources").rect().right());
+}
+
+#[test]
+fn the_sources_toggle_flips_the_inspector_without_touching_the_tabs() {
+    let mut h = harness(session(), Services::default());
+    h.state_mut().run("ui.ribbonTab", json!({"tab": "Data"})).unwrap();
+    h.run_steps(2);
+    h.get_by_label("Sources").click();
+    h.run_steps(2);
+    assert!(!h.state().ui.source_inspector, "a click turns it off");
+    assert_eq!(h.state().ui.ribbon_tab, "Data", "the active tab stays");
+    assert!(!h.state().ui.ribbon_collapsed, "the ribbon stays open");
+    assert!(h.state().session.journal.iter().all(|(id, _)| id != "view.sourceInspector"), "a UI preference, not a workbook edit");
+    // The tab row stays when the ribbon is collapsed, and the toggle with it.
+    h.state_mut().ui.ribbon_collapsed = true;
+    h.run_steps(2);
+    h.get_by_label("Sources").click();
+    h.run_steps(2);
+    assert!(h.state().ui.source_inspector, "a second click turns it back on");
+    assert!(h.state().ui.ribbon_collapsed && h.state().ui.ribbon_tab == "Data");
+}
+
+#[test]
+fn the_view_tab_has_no_sources_group() {
     let mut h = harness(session(), Services::default());
     h.state_mut().run("ui.ribbonTab", json!({"tab": "View"})).unwrap();
     h.run_steps(2);
-    h.get_by_label("Source Inspector").click();
-    h.run_steps(2);
-    assert!(!h.state().ui.source_inspector, "a click turns it off");
-    assert!(h.state().session.journal.iter().all(|(id, _)| id != "view.sourceInspector"), "a UI preference, not a workbook edit");
+    assert_eq!(h.query_all_by_label("Sources").count(), 1, "only the tab-row toggle");
+    assert!(h.query_by_label("Source Inspector").is_none());
+    let ribbon_top = h.state().grid.rect.unwrap().top();
+    assert!(
+        h.output().shapes.iter().all(|s| !matches!(&s.shape, egui::Shape::Text(t) if t.pos.y < ribbon_top && t.galley.text().contains("Inspector"))),
+        "no Source Inspector button in the View tab"
+    );
 }
 
 #[test]

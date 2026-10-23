@@ -37,15 +37,17 @@ carries a notice on its first line.
    when that would be wholly off the pane; past a list-validation arrow; under the fill handle, which
    wins). Hovering the square names the source; clicking it raises `UiRequest::SourceClick` for the
    active cell, which goes to the host's `Services::source_click`, and leaves the selection as it is.
-   View ▸ Sources ▸ Source Inspector (the UI command `view.sourceInspector`, `{on?: bool}`, on by
-   default and saved with the other UI preferences in `UiState`) turns markers, tint, square and
-   tooltips off; the links stay in the model. Normal view only. The ribbon also gains Clear Sources,
+   A Sources toggle in the ribbon's tab row, right after the last tab shown (View when the host hides
+   Automate) and before any contextual tab, runs the UI command `view.sourceInspector` (`{on?: bool}`,
+   on by default and saved with the other UI preferences in `UiState`); it is a button, not a tab, stays
+   in the tab row when the ribbon is collapsed, and turns markers, tint, square and tooltips off; the
+   links stay in the model. Normal view only. The ribbon also gains Clear Sources,
    and the marker, tint and square colours are theme tokens. Files: `crates/model`
    (`src/{cellmap,features,sheet,store}.rs`), `crates/engine` (`src/lib.rs`, the new `src/source_state.rs`,
    `src/cmd/{data,edit,format,formulas,insert,mod,sheet}.rs`, the new `src/cmd/source.rs`,
    `tests/command_sequence_fuzz.rs`), `crates/xlsx` (`src/{lib,passthrough,read,write}.rs`, the new
    `src/sources.rs`, `src/tests/passthrough_tests.rs`) and `crates/ui-egui`
-   (`src/{control,grid,icons,lib,ribbon,theme,widgets}.rs`, the new `src/source_marks.rs` and
+   (`src/{control,grid,icons,lib,ribbon,theme}.rs`, the new `src/source_marks.rs` and
    `tests/source_links.rs`). Not proposed upstream.
 
 An earlier change, the host chrome switch, was merged upstream as
