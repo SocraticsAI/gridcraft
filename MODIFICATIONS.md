@@ -37,12 +37,15 @@ carries a notice on its first line.
    when that would be wholly off the pane; past a list-validation arrow; under the fill handle, which
    wins). Hovering the square names the source; clicking it raises `UiRequest::SourceClick` for the
    active cell, which goes to the host's `Services::source_click`, and leaves the selection as it is.
+   An active unsourced number gets the same treatment in orange: an orange tint and a square with a
+   "?" whose tooltip says there is no source and whose click does nothing.
    A Sources toggle in the ribbon's tab row, right after the last tab shown (View when the host hides
    Automate) and before any contextual tab, runs the UI command `view.sourceInspector` (`{on?: bool}`,
    on by default and saved with the other UI preferences in `UiState`); it is a button, not a tab, stays
    in the tab row when the ribbon is collapsed, and turns markers, tint, square and tooltips off; the
-   links stay in the model. Normal view only. The ribbon also gains Clear Sources,
-   and the marker, tint, square and toggle colours are theme tokens. Files: `crates/model`
+   links stay in the model. It is drawn like an inactive tab label, its icon blue and underlined while on.
+   Normal view only. The ribbon also gains Clear Sources, and the marker, tint and square colours are
+   theme tokens. Files: `crates/model`
    (`src/{cellmap,features,sheet,store}.rs`), `crates/engine` (`src/lib.rs`, the new `src/source_state.rs`,
    `src/cmd/{data,edit,format,formulas,insert,mod,sheet}.rs`, the new `src/cmd/source.rs`,
    `tests/command_sequence_fuzz.rs`), `crates/xlsx` (`src/{lib,passthrough,read,write}.rs`, the new

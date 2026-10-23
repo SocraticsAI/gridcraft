@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: cell source marker, selection tint, source square and Sources toggle colours. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: cell source marker, selection tint and source square colours (linked and unsourced). See MODIFICATIONS.md.
 //! Design tokens and fonts.
 //!
 //! Colours are our own, tuned to read like a modern desktop spreadsheet. Fonts come from the
@@ -62,8 +62,12 @@ pub struct Tokens {
     pub source_square_fill: Color32,
     pub source_square_hover: Color32,
     pub source_square_ink: Color32,
-    /// The ribbon's Sources toggle while the Source Inspector is on.
-    pub source_toggle_on: Color32,
+    /// Source Inspector: the tint of an active cell holding an unsourced number, and its square
+    /// (outlined in `unsourced_mark`) at rest and under the pointer, and the square's "?".
+    pub unsourced_selected_fill: Color32,
+    pub unsourced_square_fill: Color32,
+    pub unsourced_square_hover: Color32,
+    pub unsourced_square_ink: Color32,
 }
 
 impl Tokens {
@@ -112,7 +116,10 @@ impl Tokens {
             source_square_fill: Color32::from_rgb(0xE6, 0xEE, 0xFA),
             source_square_hover: Color32::from_rgb(0xAF, 0xC7, 0xEC),
             source_square_ink: Color32::from_rgb(0x1B, 0x3A, 0x66),
-            source_toggle_on: Color32::from_rgb(0xAF, 0xC7, 0xEC),
+            unsourced_selected_fill: Color32::from_rgb(0xFD, 0xEC, 0xD9),
+            unsourced_square_fill: Color32::from_rgb(0xFD, 0xEC, 0xD9),
+            unsourced_square_hover: Color32::from_rgb(0xF9, 0xD3, 0xA8),
+            unsourced_square_ink: Color32::from_rgb(0x7A, 0x4E, 0x00),
         }
     }
 
@@ -156,7 +163,7 @@ impl Tokens {
             notice_info_bg: Color32::from_rgb(0x24, 0x33, 0x44),
             notice_info_border: Color32::from_rgb(0x3B, 0x55, 0x72),
             // Cells stay white with black text in the dark theme (`grid_bg`, `cell_text`), so the
-            // marks, the selection tint and the source square keep their light colours: a dark blue
+            // marks, the selection tints and the squares keep their light colours: a dark blue
             // would hide the cell's black text.
             sourced_mark: Color32::from_rgb(0x1F, 0x6F, 0xD1),
             unsourced_mark: Color32::from_rgb(0xE0, 0x9A, 0x1E),
@@ -164,7 +171,10 @@ impl Tokens {
             source_square_fill: Color32::from_rgb(0xE6, 0xEE, 0xFA),
             source_square_hover: Color32::from_rgb(0xAF, 0xC7, 0xEC),
             source_square_ink: Color32::from_rgb(0x1B, 0x3A, 0x66),
-            source_toggle_on: Color32::from_rgb(0xAF, 0xC7, 0xEC),
+            unsourced_selected_fill: Color32::from_rgb(0xFD, 0xEC, 0xD9),
+            unsourced_square_fill: Color32::from_rgb(0xFD, 0xEC, 0xD9),
+            unsourced_square_hover: Color32::from_rgb(0xF9, 0xD3, 0xA8),
+            unsourced_square_ink: Color32::from_rgb(0x7A, 0x4E, 0x00),
         }
     }
 

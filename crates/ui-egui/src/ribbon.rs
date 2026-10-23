@@ -263,37 +263,28 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
 }
 
 /// The Source Inspector toggle in the tab row (`view.sourceInspector`): a button, not a tab, so a
-/// click neither switches tabs nor collapses the ribbon. Filled in the source tint while on.
+/// click neither switches tabs nor collapses the ribbon. Styled as an inactive tab label; while on,
+/// its icon is in the marker blue and it carries the active tab's underline.
 fn sources_toggle(app: &mut SheetApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let lang = app.ui.language;
     let on = app.ui.source_inspector;
-    let font = theme::ui_font(13.5);
     let label = lang.tr("Sources");
-    let ink = if on { t.source_square_ink } else { t.text_dim };
-    let text = ui.painter().layout_no_wrap(label.to_string(), font, ink);
-    let icon = 16.0;
-    let (pad, gap) = (9.0, 5.0);
-    ui.add_space(6.0);
-    let (r, resp) = ui.allocate_exact_size(vec2(pad + icon + gap + text.size().x + pad, 30.0), Sense::click());
-    let pill = r.shrink2(vec2(0.0, 4.0));
-    if on {
-        ui.painter().rect_filled(pill, 5.0, t.source_toggle_on);
-        if resp.hovered() {
-            ui.painter().rect_stroke(pill, 5.0, Stroke::new(1.0, t.sourced_mark), StrokeKind::Inside);
-        }
-    } else if resp.is_pointer_button_down_on() {
-        ui.painter().rect_filled(pill, 5.0, t.pressed);
-    } else if resp.hovered() {
-        ui.painter().rect_filled(pill, 5.0, t.hover);
+    let text = ui.painter().layout_no_wrap(label.to_string(), theme::ui_font(13.5), t.text_dim);
+    let (icon, gap) = (16.0, 5.0);
+    let content_w = icon + gap + text.size().x;
+    let (r, resp) = ui.allocate_exact_size(vec2(content_w + 22.0, 30.0), Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(r.shrink2(vec2(2.0, 4.0)), 5.0, t.hover);
     }
-    icons::paint(
-        ui.painter(),
-        Rect::from_center_size(pos2(pill.left() + pad + icon / 2.0, pill.center().y), vec2(icon, icon)),
-        Icon::SourceInspect,
-        ink,
-    );
-    ui.painter().galley(pos2(pill.left() + pad + icon + gap, pill.center().y - text.size().y / 2.0), text, ink);
+    let left = r.center().x - content_w / 2.0;
+    let icon_color = if on { t.sourced_mark } else { t.text_dim };
+    icons::paint(ui.painter(), Rect::from_center_size(pos2(left + icon / 2.0, r.center().y), vec2(icon, icon)), Icon::SourceInspect, icon_color);
+    ui.painter().galley(pos2(left + icon + gap, r.center().y - text.size().y / 2.0), text, t.text_dim);
+    if on {
+        let ul = Rect::from_center_size(pos2(r.center().x, r.bottom() - 3.0), vec2(content_w.clamp(20.0, 40.0), 3.0));
+        ui.painter().rect_filled(ul, 1.5, t.accent);
+    }
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label));
     if resp.on_hover_text(lang.tr("Source Inspector: show cell sources")).clicked() {
         act(app, "view.sourceInspector", json!({}));

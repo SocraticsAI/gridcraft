@@ -11,6 +11,7 @@ use egui_kittest::kittest::Queryable;
 use gridcraft_engine::Session;
 use gridcraft_engine::core::CellRef;
 use gridcraft_engine::model::SourceLink;
+use gridcraft_engine::source_state::SourceState;
 use gridcraft_ui_egui::{Chrome, Services, SheetApp, UiState, grid::Geo, source_marks, theme::Tokens};
 use serde_json::json;
 
@@ -179,18 +180,22 @@ fn square(h: &Harness) -> Option<source_marks::SourceSquare> {
 
 /// The unoutlined rectangles filled with `color` painted over the grid (the selection tint).
 fn rects(h: &Harness, color: egui::Color32) -> Vec<egui::Rect> {
-    painted_over_grid(h, color, egui::Stroke::NONE.width)
+    painted_over_grid(h, color, egui::Stroke::NONE.width, egui::Color32::TRANSPARENT)
 }
 
 /// The rectangles filled with `color` and outlined (1px, inside) in the marker blue painted over
-/// the grid (the source square).
+/// the grid (a linked value's source square).
 fn outlined(h: &Harness, color: egui::Color32) -> Vec<egui::Rect> {
-    painted_over_grid(h, color, 1.0)
+    painted_over_grid(h, color, 1.0, Tokens::light().sourced_mark)
 }
 
-fn painted_over_grid(h: &Harness, color: egui::Color32, stroke: f32) -> Vec<egui::Rect> {
+/// The same, outlined in the marker amber (an unsourced number's square).
+fn outlined_amber(h: &Harness, color: egui::Color32) -> Vec<egui::Rect> {
+    painted_over_grid(h, color, 1.0, Tokens::light().unsourced_mark)
+}
+
+fn painted_over_grid(h: &Harness, color: egui::Color32, stroke: f32, outline: egui::Color32) -> Vec<egui::Rect> {
     let grid = h.state().grid.rect.unwrap();
-    let blue = Tokens::light().sourced_mark;
     h.output()
         .shapes
         .iter()
@@ -199,7 +204,7 @@ fn painted_over_grid(h: &Harness, color: egui::Color32, stroke: f32) -> Vec<egui
                 if r.fill == color
                     && grid.intersects(r.rect)
                     && r.stroke.width == stroke
-                    && (stroke == 0.0 || (r.stroke.color == blue && r.stroke_kind == egui::StrokeKind::Inside)) =>
+                    && (stroke == 0.0 || (r.stroke.color == outline && r.stroke_kind == egui::StrokeKind::Inside)) =>
             {
                 Some(r.rect)
             }
@@ -280,6 +285,51 @@ fn the_sources_toggle_flips_the_inspector_without_touching_the_tabs() {
     assert!(h.state().ui.ribbon_collapsed && h.state().ui.ribbon_tab == "Data");
 }
 
+/// The shapes painted inside `rect`.
+fn shapes_in(h: &Harness, rect: egui::Rect) -> Vec<egui::Shape> {
+    h.output().shapes.iter().filter(|c| rect.contains_rect(c.shape.visual_bounding_rect())).map(|c| c.shape.clone()).collect()
+}
+
+/// Whether any stroke or fill of `shapes` is `color`.
+fn uses_color(shapes: &[egui::Shape], color: egui::Color32) -> bool {
+    shapes.iter().any(|s| match s {
+        egui::Shape::Path(p) => p.fill == color || p.stroke.color == egui::epaint::ColorMode::Solid(color),
+        egui::Shape::Rect(r) => r.fill == color || r.stroke.color == color,
+        egui::Shape::Circle(c) => c.fill == color || c.stroke.color == color,
+        _ => false,
+    })
+}
+
+#[test]
+fn the_sources_toggle_looks_like_a_tab_label_with_its_icon_showing_the_state() {
+    let mut h = harness(session(), Services::default());
+    let t = Tokens::light();
+    let rect = h.get_by_label("Sources").rect();
+    let on = shapes_in(&h, rect);
+    assert!(
+        on.iter().all(|s| !matches!(s, egui::Shape::Rect(r) if r.fill != egui::Color32::TRANSPARENT && r.rect.height() > 4.0)),
+        "no filled pill: {on:?}"
+    );
+    assert!(uses_color(&on, t.sourced_mark), "the icon is in the marker blue while on");
+    let label = on.iter().find_map(|s| match s {
+        egui::Shape::Text(x) if x.galley.text() == "Sources" => Some(x.clone()),
+        _ => None,
+    });
+    let label = label.expect("the label");
+    let tab = h.output().shapes.iter().find_map(|c| match &c.shape {
+        egui::Shape::Text(x) if x.galley.text() == "Insert" && (x.visual_bounding_rect().center().y - rect.center().y).abs() < 3.0 => Some(x.clone()),
+        _ => None,
+    });
+    let tab = tab.expect("an inactive tab");
+    assert_eq!(label.galley.job.sections[0].format.font_id, tab.galley.job.sections[0].format.font_id, "the inactive tabs' font");
+    assert_eq!(label.galley.job.sections[0].format.color, t.text_dim);
+    h.get_by_label("Sources").click();
+    h.run_steps(2);
+    let off = shapes_in(&h, rect);
+    assert!(!uses_color(&off, t.sourced_mark), "a dim icon while off");
+    assert!(uses_color(&off, t.text_dim));
+}
+
 #[test]
 fn the_view_tab_has_no_sources_group() {
     let mut h = harness(session(), Services::default());
@@ -311,18 +361,94 @@ fn selecting_a_linked_cell_tints_it_and_shows_its_square_to_the_right() {
     assert_eq!(outlined(&h, t.source_square_fill), [sq.rect], "painted in the chip colour, outlined in the marker blue");
     assert_eq!(t.source_selected_fill, egui::Color32::from_rgb(0xE6, 0xEE, 0xFA), "the light tint, the chip's resting blue");
     assert_eq!(t.source_square_hover, egui::Color32::from_rgb(0xAF, 0xC7, 0xEC));
-    assert_eq!(t.source_toggle_on, egui::Color32::from_rgb(0xAF, 0xC7, 0xEC), "the Sources toggle keeps its own, deeper blue");
+    assert!(texts(&h, "?").is_empty(), "an arrow, not a question mark");
+}
+
+/// Where text `s` is painted over the grid.
+fn texts(h: &Harness, s: &str) -> Vec<(egui::Rect, egui::Color32)> {
+    let grid = h.state().grid.rect.unwrap();
+    h.output()
+        .shapes
+        .iter()
+        .filter_map(|c| match &c.shape {
+            egui::Shape::Text(t) if t.galley.text() == s && grid.intersects(t.visual_bounding_rect()) => {
+                Some((t.visual_bounding_rect(), t.fallback_color))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 #[test]
-fn an_unsourced_or_formula_active_cell_has_no_tint_or_square() {
+fn selecting_an_unsourced_number_tints_it_orange_with_a_question_square() {
     let mut h = harness(session(), Services::default());
     let t = Tokens::light();
-    for cell in ["B3", "C2", "C4"] {
+    select(&mut h, "B3");
+    let b3 = cell_rect(&h, "B3");
+    assert_eq!(rects(&h, t.unsourced_selected_fill), [b3], "the active unsourced number is tinted orange");
+    assert!(rects(&h, t.source_selected_fill).is_empty(), "not blue");
+    let sq = square(&h).expect("a square");
+    assert_eq!((sq.cell.a1().as_str(), sq.state), ("B3", SourceState::Unsourced));
+    assert!(!sq.opens_source());
+    assert!(sq.rect.left() > b3.right() && sq.rect.left() < b3.right() + 6.0, "just right of the cell: {sq:?} {b3:?}");
+    assert_eq!(outlined_amber(&h, t.unsourced_square_fill), [sq.rect], "light orange, outlined in the marker amber");
+    assert!(outlined(&h, t.source_square_fill).is_empty(), "no blue square");
+    let q = texts(&h, "?");
+    assert_eq!(q.len(), 1, "a question mark in the square");
+    assert!(sq.rect.contains(q[0].0.center()) && (q[0].0.center() - sq.rect.center()).length() < 2.0, "centred: {q:?} {sq:?}");
+    assert_eq!(q[0].1, t.unsourced_square_ink);
+    assert_eq!(
+        (t.unsourced_selected_fill, t.unsourced_square_fill, t.unsourced_square_hover, t.unsourced_square_ink),
+        (
+            egui::Color32::from_rgb(0xFD, 0xEC, 0xD9),
+            egui::Color32::from_rgb(0xFD, 0xEC, 0xD9),
+            egui::Color32::from_rgb(0xF9, 0xD3, 0xA8),
+            egui::Color32::from_rgb(0x7A, 0x4E, 0x00)
+        )
+    );
+    assert_eq!(Tokens::dark().unsourced_selected_fill, t.unsourced_selected_fill, "the grid stays light in the dark theme");
+    // Hovering it explains and lights it.
+    h.input_mut().events.push(Event::PointerMoved(sq.rect.center()));
+    h.run_steps(2);
+    assert_eq!(tip_shown(&h).as_deref(), Some("No source for this value"));
+    assert_eq!(outlined_amber(&h, t.unsourced_square_hover), [sq.rect], "the hover orange, still outlined");
+}
+
+#[test]
+fn clicking_an_unsourced_square_does_nothing() {
+    let (mut h, clicks) = with_clicks();
+    select(&mut h, "B3");
+    let at = square(&h).unwrap().rect.center();
+    click(&mut h, at);
+    assert!(clicks.borrow().is_empty(), "nothing to open");
+    assert_eq!(active(&h), "B3", "the square floats over C3 but the click doesn't select it");
+}
+
+#[test]
+fn a_formula_or_unlinked_text_active_cell_has_no_tint_or_square() {
+    let mut h = harness(session(), Services::default());
+    h.state_mut().session.execute("cell.set", json!({"cell": "E3", "input": "Opening balance"})).unwrap();
+    let t = Tokens::light();
+    for cell in ["C2", "C4", "E3"] {
         select(&mut h, cell);
         assert_eq!(square(&h), None, "{cell}");
-        assert!(rects(&h, t.source_selected_fill).is_empty() && outlined(&h, t.source_square_fill).is_empty(), "{cell}");
+        for fill in [t.source_selected_fill, t.unsourced_selected_fill] {
+            assert!(rects(&h, fill).is_empty(), "{cell}");
+        }
     }
+}
+
+#[test]
+fn turning_the_inspector_off_hides_the_unsourced_tint_and_square() {
+    let mut h = harness(session(), Services::default());
+    select(&mut h, "B3");
+    assert!(square(&h).is_some());
+    h.state_mut().run("view.sourceInspector", json!({"on": false})).unwrap();
+    h.run_steps(2);
+    assert_eq!(square(&h), None);
+    let t = Tokens::light();
+    assert!(rects(&h, t.unsourced_selected_fill).is_empty() && outlined_amber(&h, t.unsourced_square_fill).is_empty());
+    assert!(texts(&h, "?").is_empty());
 }
 
 #[test]
@@ -330,7 +456,13 @@ fn only_the_active_cell_of_a_range_is_inspected() {
     let mut h = harness(session(), Services::default());
     h.state_mut().session.execute("selection.set", json!({"range": "B2:D3", "active": "B3"})).unwrap();
     h.run_steps(2);
-    assert_eq!(square(&h), None, "B3 is unlinked, though B2 and D2 in the range are linked");
+    assert_eq!(
+        square(&h).map(|s| (s.cell.a1(), s.state)),
+        Some(("B3".to_string(), SourceState::Unsourced)),
+        "B3 is unsourced, though B2 and D2 are linked"
+    );
+    assert!(rects(&h, Tokens::light().source_selected_fill).is_empty());
+    assert_eq!(rects(&h, Tokens::light().unsourced_selected_fill), [cell_rect(&h, "B3")]);
     h.state_mut().session.execute("selection.set", json!({"range": "B2:D3", "active": "D2"})).unwrap();
     h.run_steps(2);
     assert_eq!(square(&h).map(|s| s.cell.a1()).as_deref(), Some("D2"));

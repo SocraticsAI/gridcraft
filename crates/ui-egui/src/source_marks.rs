@@ -3,7 +3,9 @@
 //! markers, a small triangle in the top-left corner of a hard-coded value that has a source link (`Tokens::sourced_mark`) or of
 //! a hard-coded number that hasn't (`Tokens::unsourced_mark`), with a tooltip; and for an active
 //! cell holding a linked value, a tint over the cell (`Tokens::source_selected_fill`) and a source
-//! square beside it whose click goes to the host. Formulas have none. Normal view only: Page
+//! square beside it whose click goes to the host, or for an active unsourced number, an orange tint
+//! (`Tokens::unsourced_selected_fill`) and a square with a "?" whose click does nothing. Formulas
+//! have none. Normal view only: Page
 //! Layout view shows nothing. The markers are indicators only; the square is what is clicked.
 
 use egui::{Painter, Pos2, Rect, Stroke, pos2, vec2};
@@ -77,31 +79,41 @@ pub fn hit(geo: &Geo, d: &DocState, si: usize, sh: &Sheet, p: Pos2) -> Option<Ce
     marker_rect(geo, sh, anchor)?.contains(p).then_some(anchor)
 }
 
-/// The active cell (its merged area's anchor) when the Source Inspector shows it as linked: the
-/// inspector is on, the view is Normal, no cell is being edited and it holds a linked hard-coded
-/// value. It gets the tint and the source square.
-pub fn active_linked(app: &SheetApp, geo: &Geo, si: usize, sh: &Sheet, sel: &Selection) -> Option<CellRef> {
+/// The active cell (its merged area's anchor) and its state when the Source Inspector inspects it:
+/// the inspector is on, the view is Normal, no cell is being edited and it holds a hard-coded value
+/// with a marker (linked, or an unsourced number). It gets the tint and the square of its state.
+pub fn active_inspected(app: &SheetApp, geo: &Geo, si: usize, sh: &Sheet, sel: &Selection) -> Option<(CellRef, SourceState)> {
     if !app.ui.source_inspector || geo.paper.is_some() || app.editor.is_some() {
         return None;
     }
     let d = app.session.active()?;
     let anchor = sh.merge_at(sel.active).map_or(sel.active, |m| m.start);
-    (source_state(&d.wb, si, anchor)? == SourceState::Sourced).then_some(anchor)
+    Some((anchor, source_state(&d.wb, si, anchor)?))
 }
 
-/// The source square beside an active linked cell, in logical coordinates: `rect` is where it is
+/// The tint over an active inspected cell in `state`.
+pub fn tint(state: SourceState, t: &Tokens) -> egui::Color32 {
+    match state {
+        SourceState::Sourced => t.source_selected_fill,
+        SourceState::Unsourced => t.unsourced_selected_fill,
+    }
+}
+
+/// The square beside an active inspected cell, in logical coordinates: `rect` is where it is
 /// painted and `clip` the part of the cells it may show in (the panes of its row and those right of
-/// its column, so it never covers the headers or the frozen columns of a scrolled cell).
+/// its column, so it never covers the headers or the frozen columns of a scrolled cell). A linked
+/// value's (`Sourced`) opens its source when clicked; an unsourced number's only explains.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SourceSquare {
     pub cell: CellRef,
+    pub state: SourceState,
     pub rect: Rect,
     pub clip: Rect,
 }
 
 impl SourceSquare {
     /// Where it is painted, and the cell it belongs to.
-    pub fn new(geo: &Geo, sh: &Sheet, cell: CellRef) -> Option<SourceSquare> {
+    pub fn new(geo: &Geo, sh: &Sheet, cell: CellRef, state: SourceState) -> Option<SourceSquare> {
         if geo.hidden_under_frozen(sh, cell) || sh.row_height(cell.row) <= 0.0 {
             return None;
         }
@@ -126,7 +138,7 @@ impl SourceSquare {
         } else {
             right
         };
-        let square = SourceSquare { cell, rect, clip };
+        let square = SourceSquare { cell, state, rect, clip };
         (square.visible().is_positive() && square.visible().is_finite()).then_some(square)
     }
 
@@ -140,14 +152,27 @@ impl SourceSquare {
         self.visible().contains(p)
     }
 
-    /// Paints the square into the pane `p` paints, outlined in the marker blue, in the hover
-    /// colour while `hot`.
+    /// Whether a click on it goes to the host (a linked value's square).
+    pub fn opens_source(&self) -> bool {
+        self.state == SourceState::Sourced
+    }
+
+    /// Paints the square into the pane `p` paints, outlined in its marker's colour, in the hover
+    /// colour while `hot`: an up-right arrow for a linked value, a "?" for an unsourced number.
     pub fn paint(&self, p: &Painter, hot: bool, t: &Tokens) {
         let p = p.with_clip_rect(p.clip_rect().intersect(self.clip));
         let side = self.rect.width();
-        let fill = if hot { t.source_square_hover } else { t.source_square_fill };
-        p.rect(self.rect, (side * 0.2).clamp(2.0, 4.0), fill, Stroke::new(1.0, t.sourced_mark), egui::StrokeKind::Inside);
-        icons::paint(&p, self.rect.shrink(side * 0.2), Icon::ArrowUpRight, t.source_square_ink);
+        let (fill, hover, outline, ink) = match self.state {
+            SourceState::Sourced => (t.source_square_fill, t.source_square_hover, t.sourced_mark, t.source_square_ink),
+            SourceState::Unsourced => (t.unsourced_square_fill, t.unsourced_square_hover, t.unsourced_mark, t.unsourced_square_ink),
+        };
+        p.rect(self.rect, (side * 0.2).clamp(2.0, 4.0), if hot { hover } else { fill }, Stroke::new(1.0, outline), egui::StrokeKind::Inside);
+        match self.state {
+            SourceState::Sourced => icons::paint(&p, self.rect.shrink(side * 0.2), Icon::ArrowUpRight, ink),
+            SourceState::Unsourced => {
+                p.text(self.rect.center(), egui::Align2::CENTER_CENTER, "?", crate::theme::ui_bold(side * 0.7), ink);
+            }
+        }
     }
 }
 
