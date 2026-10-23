@@ -1,15 +1,17 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
-//! Cell source markers, on hard-coded values only: hovering one names the value's source; clicking
-//! one tells the host. Formulas have none.
+//! The Source Inspector: markers on hard-coded values only (hovering one names the value's source;
+//! a click only selects), and for an active linked value a tint and a source square whose click
+//! tells the host. Formulas have none. View ▸ Source Inspector turns it all off.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use egui::{Event, Modifiers, PointerButton, Pos2};
+use egui_kittest::kittest::Queryable;
 use gridcraft_engine::Session;
 use gridcraft_engine::core::CellRef;
 use gridcraft_engine::model::SourceLink;
-use gridcraft_ui_egui::{Services, SheetApp, grid::Geo, source_marks, theme::Tokens};
+use gridcraft_ui_egui::{Services, SheetApp, UiState, grid::Geo, source_marks, theme::Tokens};
 use serde_json::json;
 
 type Harness = egui_kittest::Harness<'static, SheetApp>;
@@ -140,56 +142,251 @@ fn active(h: &Harness) -> String {
 }
 
 #[test]
-fn clicking_a_marker_selects_the_cell_and_tells_the_host() {
+fn clicking_a_marker_only_selects_the_cell() {
     let (mut h, clicks) = with_clicks();
-    let at = marker_center(&h, "D2");
-    click(&mut h, at);
-    assert_eq!(active(&h), "D2");
-    assert_eq!(clicks.borrow().as_slice(), [("Sheet1".to_string(), "D2".to_string())]);
-    let at = marker_center(&h, "B3");
-    click(&mut h, at);
-    assert_eq!(clicks.borrow().last(), Some(&("Sheet1".to_string(), "B3".to_string())), "an unsourced marker is reported too");
-    // A formula's corner is no marker: the click only selects. (C4's corner holds B3's fill handle.)
-    let at = marker_center(&h, "C5");
-    click(&mut h, at);
-    assert_eq!(active(&h), "C5");
-    assert_eq!(clicks.borrow().len(), 2);
+    for cell in ["D2", "B3"] {
+        let at = marker_center(&h, cell);
+        click(&mut h, at);
+        assert_eq!(active(&h), cell, "a click on the marker selects {cell}");
+    }
+    assert!(clicks.borrow().is_empty(), "markers are indicators: only the source square tells the host");
 }
 
 #[test]
 fn clicking_elsewhere_in_the_cell_only_selects_it() {
     let (mut h, clicks) = with_clicks();
-    let center = {
-        let app = h.state();
-        let sheet = app.session.active().unwrap().wb.active().unwrap();
-        Geo::new(sheet, app.grid.rect.unwrap(), app.view().scroll).cell_rect(sheet, CellRef::parse("B2").unwrap()).center()
-    };
+    let center = cell_rect(&h, "B2").center();
     click(&mut h, center);
     assert_eq!(active(&h), "B2");
     assert!(clicks.borrow().is_empty());
 }
 
+fn cell_rect(h: &Harness, cell: &str) -> egui::Rect {
+    let app = h.state();
+    let sheet = app.session.active().unwrap().wb.active().unwrap();
+    Geo::new(sheet, app.grid.rect.unwrap(), app.view().scroll).cell_rect(sheet, CellRef::parse(cell).unwrap())
+}
+
+fn select(h: &mut Harness, cell: &str) {
+    h.state_mut().session.execute("selection.set", json!({"cell": cell})).unwrap();
+    h.run_steps(2);
+}
+
+/// The source square shown this frame, in logical coordinates.
+fn square(h: &Harness) -> Option<source_marks::SourceSquare> {
+    h.state().grid.source_square
+}
+
+/// The painted rectangles filled with `color`.
+fn rects(h: &Harness, color: egui::Color32) -> Vec<egui::Rect> {
+    h.output()
+        .shapes
+        .iter()
+        .filter_map(|s| match &s.shape {
+            egui::Shape::Rect(r) if r.fill == color => Some(r.rect),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
-fn clicking_the_marker_of_a_hyperlinked_cell_does_not_follow_the_link() {
+fn the_inspector_is_on_by_default_toggles_and_persists() {
+    assert!(UiState::default().source_inspector);
+    let old: UiState = serde_json::from_str(r#"{"dark": false, "animations": true}"#).unwrap();
+    assert!(old.source_inspector, "a ui.json written before the setting existed keeps it on");
+    let mut h = harness(session(), Services::default());
+    assert!(h.state().ui.source_inspector);
+    assert_eq!(h.state_mut().run("view.sourceInspector", json!({})), Ok(json!({"on": false})), "no params toggles");
+    assert_eq!(h.state_mut().run("view.sourceInspector", json!({"on": false})), Ok(json!({"on": false})));
+    let saved: UiState = serde_json::from_str(&serde_json::to_string(&h.state().ui).unwrap()).unwrap();
+    assert!(!saved.source_inspector, "the choice is saved with the other UI preferences");
+    assert_eq!(h.state_mut().run("view.sourceInspector", json!({"on": true})), Ok(json!({"on": true})));
+    assert!(h.state().ui.source_inspector);
+}
+
+#[test]
+fn the_ribbon_toggle_sits_at_the_end_of_the_view_tab() {
+    let mut h = harness(session(), Services::default());
+    h.state_mut().run("ui.ribbonTab", json!({"tab": "View"})).unwrap();
+    h.run_steps(2);
+    h.get_by_label("Source Inspector").click();
+    h.run_steps(2);
+    assert!(!h.state().ui.source_inspector, "a click turns it off");
+    assert!(h.state().session.journal.iter().all(|(id, _)| id != "view.sourceInspector"), "a UI preference, not a workbook edit");
+}
+
+#[test]
+fn selecting_a_linked_cell_tints_it_and_shows_its_square_to_the_right() {
+    let mut h = harness(session(), Services::default());
+    let t = Tokens::light();
+    assert_eq!(square(&h), None, "A1 is empty");
+    assert!(rects(&h, t.source_selected_fill).is_empty());
+    select(&mut h, "B2");
+    let b2 = cell_rect(&h, "B2");
+    assert_eq!(rects(&h, t.source_selected_fill), [b2], "the active linked cell is tinted");
+    let sq = square(&h).expect("a source square");
+    assert_eq!(sq.cell.a1(), "B2");
+    assert!(sq.rect.left() > b2.right() && sq.rect.left() < b2.right() + 6.0, "just right of the cell: {sq:?} {b2:?}");
+    assert!((sq.rect.width() - sq.rect.height()).abs() < 0.01 && (sq.rect.height() - b2.height().max(source_marks::SQUARE_MIN)).abs() < 0.01);
+    assert!((sq.rect.center().y - b2.center().y).abs() < 0.01, "level with the cell");
+    assert_eq!(rects(&h, t.source_square_fill), [sq.rect], "painted in the chip colour");
+}
+
+#[test]
+fn an_unsourced_or_formula_active_cell_has_no_tint_or_square() {
+    let mut h = harness(session(), Services::default());
+    let t = Tokens::light();
+    for cell in ["B3", "C2", "C4"] {
+        select(&mut h, cell);
+        assert_eq!(square(&h), None, "{cell}");
+        assert!(rects(&h, t.source_selected_fill).is_empty() && rects(&h, t.source_square_fill).is_empty(), "{cell}");
+    }
+}
+
+#[test]
+fn only_the_active_cell_of_a_range_is_inspected() {
+    let mut h = harness(session(), Services::default());
+    h.state_mut().session.execute("selection.set", json!({"range": "B2:D3", "active": "B3"})).unwrap();
+    h.run_steps(2);
+    assert_eq!(square(&h), None, "B3 is unlinked, though B2 and D2 in the range are linked");
+    h.state_mut().session.execute("selection.set", json!({"range": "B2:D3", "active": "D2"})).unwrap();
+    h.run_steps(2);
+    assert_eq!(square(&h).map(|s| s.cell.a1()).as_deref(), Some("D2"));
+    assert_eq!(rects(&h, Tokens::light().source_selected_fill), [cell_rect(&h, "D2")]);
+}
+
+#[test]
+fn clicking_the_square_tells_the_host_and_keeps_the_selection() {
+    let (mut h, clicks) = with_clicks();
+    select(&mut h, "D2");
+    let at = square(&h).unwrap().rect.center();
+    click(&mut h, at);
+    assert_eq!(clicks.borrow().as_slice(), [("Sheet1".to_string(), "D2".to_string())]);
+    assert_eq!(active(&h), "D2", "the square floats over E2 but the click doesn't select it");
+}
+
+#[test]
+fn clicking_the_square_of_a_hyperlinked_cell_does_not_follow_the_link() {
     let (mut h, clicks) = with_clicks();
     h.state_mut().session.execute("insert.link", json!({"cell": "B2", "target": "Sheet1!E9"})).unwrap();
-    // Past the corner A1's fill handle covers, which wins over the marker.
-    let at = marker(&h, "B2").min + egui::vec2(6.5, 6.5);
+    select(&mut h, "B2");
+    let at = square(&h).unwrap().rect.center();
     click(&mut h, at);
     assert_eq!(clicks.borrow().len(), 1);
     assert_eq!(active(&h), "B2", "following the internal link would have gone to E9");
 }
 
 #[test]
-fn the_fill_handle_wins_over_a_diagonal_neighbours_marker() {
-    let (mut h, clicks) = with_clicks();
-    h.state_mut().session.execute("selection.set", json!({"cell": "A1"})).unwrap();
+fn hovering_the_square_names_the_source_and_lights_it() {
+    let mut h = harness(session(), Services::default());
+    let t = Tokens::light();
+    select(&mut h, "D2");
+    let sq = square(&h).unwrap();
+    h.input_mut().events.push(Event::PointerMoved(sq.rect.center()));
     h.run_steps(2);
+    assert_eq!(tip_shown(&h).as_deref(), Some("GL Detail · GL Detail!C16102"));
+    assert!(rects(&h, t.source_selected_fill).contains(&sq.rect), "the square deepens to the hover blue");
+    assert!(rects(&h, t.source_square_fill).is_empty());
+}
+
+#[test]
+fn the_fill_handle_wins_over_the_square() {
+    let (mut h, clicks) = with_clicks();
+    select(&mut h, "B2");
+    let b2 = cell_rect(&h, "B2");
+    let sq = square(&h).unwrap();
+    // On both the square's bottom-left corner and B2's fill handle (9 points square on the corner).
+    let at = egui::pos2(sq.rect.left() + 0.75, b2.bottom() - 1.0);
+    assert!(sq.contains(at) && egui::Rect::from_center_size(b2.right_bottom(), egui::vec2(9.0, 9.0)).contains(at));
+    h.input_mut().events.push(Event::PointerMoved(at));
+    h.run_steps(2);
+    assert_eq!(h.state().grid.source_tip, None, "no source tooltip over the fill handle");
+    assert!(rects(&h, Tokens::light().source_selected_fill).iter().all(|r| *r != sq.rect), "the square isn't lit");
+    click(&mut h, at);
+    assert!(clicks.borrow().is_empty(), "the press grabbed the fill handle");
+    assert_eq!(active(&h), "B2");
+}
+
+#[test]
+fn the_fill_handle_still_wins_over_a_diagonal_neighbours_marker() {
+    let (mut h, clicks) = with_clicks();
+    select(&mut h, "A1");
     // A1's fill handle overlaps B2's marker (B2 is sourced).
     let at = marker(&h, "B2").min + egui::vec2(3.0, 3.0);
     click(&mut h, at);
     assert_eq!(active(&h), "A1", "the click grabbed the handle instead of selecting B2");
     assert!(clicks.borrow().is_empty());
+}
+
+#[test]
+fn turning_the_inspector_off_hides_markers_tint_square_and_tips() {
+    let (mut h, clicks) = with_clicks();
+    let t = Tokens::light();
+    select(&mut h, "B2");
+    let was = square(&h).unwrap().rect.center();
+    h.state_mut().run("view.sourceInspector", json!({"on": false})).unwrap();
+    h.run_steps(2);
+    assert_eq!(square(&h), None);
+    for color in [t.sourced_mark, t.unsourced_mark] {
+        assert!(triangles(&h, color).is_empty(), "no markers");
+    }
+    assert!(rects(&h, t.source_selected_fill).is_empty() && rects(&h, t.source_square_fill).is_empty(), "no tint, no square");
+    let at = marker_center(&h, "D2");
+    h.input_mut().events.push(Event::PointerMoved(at));
+    h.run_steps(2);
+    assert_eq!(h.state().grid.source_tip, None, "no tooltip on a hidden marker");
+    click(&mut h, was);
+    assert!(clicks.borrow().is_empty(), "nothing where the square was: the click selects the cell under it");
+    assert_eq!(active(&h), "C2");
+    let wb = &h.state().session.active().unwrap().wb;
+    assert_eq!(wb.active().unwrap().sources.len(), 2, "the links are untouched");
+}
+
+#[test]
+fn the_square_flips_left_when_the_cell_runs_off_the_window() {
+    let mut h = harness(session(), Services::default());
+    h.state_mut().session.execute("home.columnWidth", json!({"cols": "B:B", "width": 1800})).unwrap();
+    select(&mut h, "B2");
+    let b2 = cell_rect(&h, "B2");
+    let cells = h.state().grid.geo.as_ref().unwrap().cells;
+    assert!(b2.right() > cells.right());
+    let sq = square(&h).unwrap();
+    assert!(sq.rect.right() < b2.left() && sq.rect.left() > cells.left(), "beside the cell's left edge, over A2: {sq:?}");
+}
+
+#[test]
+fn the_square_sits_on_the_far_side_of_a_right_to_left_cell() {
+    let (mut h, clicks) = with_clicks();
+    h.state_mut().session.execute("view.rightToLeft", json!({"on": true})).unwrap();
+    select(&mut h, "B2");
+    let geo = h.state().grid.geo.clone().unwrap();
+    let sq = square(&h).unwrap();
+    let b2 = geo.screen_cell_rect(h.state().session.active().unwrap().wb.active().unwrap(), CellRef::parse("B2").unwrap());
+    let on_screen = geo.mirror_rect(sq.rect);
+    assert!(on_screen.right() < b2.left(), "mirrored: left of the cell on screen ({on_screen:?}, {b2:?})");
+    assert!(rects(&h, Tokens::light().source_square_fill).contains(&on_screen));
+    click(&mut h, on_screen.center());
+    assert_eq!(clicks.borrow().as_slice(), [("Sheet1".to_string(), "B2".to_string())]);
+}
+
+#[test]
+fn the_square_of_a_frozen_cell_crosses_into_the_scrolled_columns_but_not_the_headers() {
+    let (mut h, clicks) = with_clicks();
+    h.state_mut().run("view.freezePanes", json!({"cell": "C3"})).unwrap();
+    select(&mut h, "B2");
+    let sq = square(&h).unwrap();
+    let geo = h.state().grid.geo.clone().unwrap();
+    assert_eq!(sq.clip.top(), geo.cells.top(), "B2 is in the frozen rows");
+    assert!(sq.clip.left() == geo.cells.left() && sq.visible() == sq.rect, "and in the frozen columns: the square is whole");
+    click(&mut h, sq.rect.center());
+    assert_eq!(clicks.borrow().len(), 1);
+    // A scrolled cell under the frozen columns shows no square.
+    select(&mut h, "D2");
+    if let Some(v) = h.state_mut().view_mut() {
+        v.scroll.x = 400.0;
+    }
+    h.run_steps(2);
+    assert!(square(&h).is_none_or(|s| s.visible().left() >= geo.cells.left() + geo.frozen_w), "never over the frozen columns");
 }
 
 /// The top-left corners of the painted triangles of colour `color`.

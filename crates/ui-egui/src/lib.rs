@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch and cell source markers. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch, cell source markers and the Source Inspector. See MODIFICATIONS.md.
 //! GridCraft's egui frontend: an Excel-style window (title bar with Quick Access Toolbar,
 //! ribbon, formula bar, grid, sheet tabs, status bar) over `gridcraft-engine`.
 //!
@@ -62,6 +62,9 @@ pub struct UiState {
     /// Enable AutoComplete for cell values (File ▸ Options ▸ Editing): typed text is completed
     /// from the one matching entry in the same column.
     pub autocomplete: bool,
+    /// Source Inspector (View ▸ Sources): source markers on hard-coded values, and for an active
+    /// linked value its tint and source square. Off hides them all; the links stay in the model.
+    pub source_inspector: bool,
     pub recent: Vec<String>,
     /// One-shot keytip request for a ribbon control: set when a keytip action resolves to
     /// [`keytips::Action::Control`], consumed (and cleared) by the control's render site.
@@ -105,6 +108,7 @@ impl Default for UiState {
             status_bar: true,
             animations: true,
             autocomplete: true,
+            source_inspector: true,
             recent: vec![],
             keytip_invoke: None,
             language: i18n::Language::En,
@@ -638,6 +642,10 @@ impl SheetApp {
             "view.animations" => {
                 self.ui.animations = p.get("on").and_then(Json::as_bool).unwrap_or(!self.ui.animations);
                 Ok(json!({"on": self.ui.animations}))
+            }
+            "view.sourceInspector" => {
+                self.ui.source_inspector = p.get("on").and_then(Json::as_bool).unwrap_or(!self.ui.source_inspector);
+                Ok(json!({"on": self.ui.source_inspector}))
             }
             "options.autoComplete" => {
                 self.ui.autocomplete = p.get("on").and_then(Json::as_bool).unwrap_or(!self.ui.autocomplete);

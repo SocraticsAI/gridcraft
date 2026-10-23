@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and cell source markers. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and the Source Inspector (cell source markers, the active linked cell's tint and source square). See MODIFICATIONS.md.
 //! The worksheet grid: virtualised painting of only the visible cells, frozen panes,
 //! headers, selection, fill handle, column/row resizing, text overflow, borders, conditional
 //! formats, tables, comments, filters, sparklines, floating charts/pictures/shapes and the
@@ -154,6 +154,8 @@ pub struct GridState {
     pub touch_pan: bool,
     /// The source marker tooltip: (doc uid, revision, sheet, cell) and its text, traced once per key.
     pub source_tip: Option<((u64, u64, usize, CellRef), Option<String>)>,
+    /// The source square beside the active linked cell this frame (hit-testing for clicks, tooltips and tests).
+    pub source_square: Option<crate::source_marks::SourceSquare>,
 }
 
 /// Ctrl+wheel zoom for one (doc uid, sheet). egui eases a notch in over several frames and
@@ -743,10 +745,21 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     // Everything up to the headers is painted in logical (left-to-right) coordinates.
     let mirror_from = painter.add(egui::Shape::Noop);
     let mut cf = CfCache::new();
+    // Source Inspector: the active linked cell's tint and source square (lit under the pointer
+    // unless the fill handle, which wins, is there too).
+    let source_cell = crate::source_marks::active_linked(app, &geo, si, sh, &sel);
+    let square = source_cell.and_then(|c| crate::source_marks::SourceSquare::new(&geo, sh, c));
+    app.grid.source_square = square;
+    let square_hot = square.is_some_and(|sq| {
+        app.grid.drag == Drag::None
+            && resp.hovered()
+            && ui.ctx().pointer_hover_pos().map(|p| geo.mirror_pos(p)).is_some_and(|p| sq.contains(p) && !on_fill_handle(&geo, sh, &sel, p))
+    });
+    let inspect = SourceInspect { tint: source_cell, square: square.map(|sq| (sq, square_hot)) };
     let quads = if geo.paper.is_some() {
         crate::paper_view::paint_pages(app, &painter, &geo, &wb, si, sh, &sel, outline, &mut cf, &t)
     } else {
-        paint_panes(app, &painter, &geo, &wb, si, sh, &sel, outline, &mut cf, &t)
+        paint_panes(app, &painter, &geo, &wb, si, sh, &sel, outline, &mut cf, &t, &inspect)
     };
     // Objects above cells.
     let objects = crate::chartview::paint_objects(app, &painter.with_clip_rect(geo.cells), &geo, &wb, si, sh);
@@ -802,6 +815,13 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     }
 }
 
+/// What the Source Inspector paints for the active cell: its tint, and its source square (and
+/// whether the pointer is on it).
+struct SourceInspect {
+    tint: Option<CellRef>,
+    square: Option<(crate::source_marks::SourceSquare, bool)>,
+}
+
 /// Normal view: up to four panes (frozen rows/columns), each painted with its own clip.
 #[allow(clippy::too_many_arguments)]
 fn paint_panes(
@@ -815,6 +835,7 @@ fn paint_panes(
     outline: Rect,
     cf: &mut CfCache,
     t: &Tokens,
+    inspect: &SourceInspect,
 ) -> Vec<((u32, u32), (u32, u32), Rect)> {
     // Quadrants: (rows, cols, clip).
     let (sr0, sr1) = geo.scroll_rows(sh);
@@ -837,9 +858,16 @@ fn paint_panes(
             continue;
         }
         let p = painter.with_clip_rect(*clip);
-        paint_quadrant(&p, geo, wb, si, sh, *rows, *cols, cf, t);
-        if let Some(d) = app.session.active() {
+        let tint = inspect.tint.map(|c| (c, t.source_selected_fill));
+        paint_quadrant_tinted(&p, geo, wb, si, sh, *rows, *cols, cf, t, tint);
+        if app.ui.source_inspector
+            && let Some(d) = app.session.active()
+        {
             crate::source_marks::paint_quadrant(d, &p, geo, si, sh, *rows, *cols, t);
+        }
+        // Over the neighbouring cells, under the selection outline and the fill handle.
+        if let Some((square, hot)) = &inspect.square {
+            square.paint(&p, *hot, t);
         }
         paint_selection(&p, geo, sh, sel, outline, t, app, *rows, *cols);
     }
@@ -1067,6 +1095,24 @@ pub(crate) fn paint_quadrant(
     cf: &mut CfCache,
     t: &Tokens,
 ) {
+    paint_quadrant_tinted(p, geo, wb, si, sh, rows, cols, cf, t, None);
+}
+
+/// `paint_quadrant`, with `tint`'s cell (an anchor) filled in its colour over its own fill and
+/// under its text.
+#[allow(clippy::too_many_arguments)]
+fn paint_quadrant_tinted(
+    p: &Painter,
+    geo: &Geo,
+    wb: &Workbook,
+    si: usize,
+    sh: &Sheet,
+    rows: (u32, u32),
+    cols: (u32, u32),
+    cf: &mut CfCache,
+    t: &Tokens,
+    tint: Option<(CellRef, Color32)>,
+) {
     let z = geo.z;
     let (r0, r1) = rows;
     let (c0, c1) = cols;
@@ -1122,6 +1168,9 @@ pub(crate) fn paint_quadrant(
             p.rect_filled(rect.expand(0.0), 0.0, f);
         } else if in_merge(c).is_some() {
             p.rect_filled(rect.shrink(0.5), 0.0, Color32::WHITE);
+        }
+        if let Some((_, color)) = tint.filter(|(cell, _)| *cell == anchor) {
+            p.rect_filled(rect, 0.0, color);
         }
         looks.push((anchor, rect, lk, cfl));
     }
@@ -1829,12 +1878,13 @@ fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Response, geo: &
     let in_corner = pos.is_some_and(|p| p.x < geo.cells.left() && p.y < geo.cells.top() && p.x >= geo.head_left() && p.y >= geo.head_top());
     let sel = app.session.active().map(|d| d.selection.clone()).unwrap_or_default();
     let cur_rect = geo.range_rect(sh, sel.current());
-    let handle = Rect::from_center_size(cur_rect.right_bottom(), vec2(9.0, 9.0));
     // The fill handle and the move border only react in the panes where they are painted, not
     // over the frozen rows/columns that a scrolled selection lies under.
-    let handle_panes = geo.range_panes(RangeRef::cell(sel.current().end));
     let border_panes = geo.range_panes(sel.current());
-    let on_handle = |p: Pos2| handle.contains(p) && handle_panes.iter().any(|r| r.contains(p));
+    let on_handle = |p: Pos2| on_fill_handle(geo, sh, &sel, p);
+    // The active linked cell's source square (the fill handle wins where they overlap).
+    let square = app.grid.source_square.filter(|_| app.editor.is_none());
+    let on_square = |p: Pos2| square.is_some_and(|sq| sq.contains(p)) && !on_handle(p);
     let on_cur_border = |p: Pos2| on_border(cur_rect, p) && border_panes.iter().any(|r| r.contains(p));
 
     let (freeze_cols, freeze_rows) = freeze_handles(geo);
@@ -1871,6 +1921,8 @@ fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Response, geo: &
             if app.grid.drag == Drag::None && !pointer.any_down() {
                 resp.clone().on_hover_text_at_pointer("Drag to fill cells. Drag from inside a cell to select a range.");
             }
+        } else if in_cells && on_square(p) {
+            ctx.set_cursor_icon(CursorIcon::PointingHand);
         } else if in_cells && app.editor.is_none() && on_cur_border(p) {
             ctx.set_cursor_icon(CursorIcon::Move);
         } else if in_cells {
@@ -1880,7 +1932,8 @@ fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Response, geo: &
             let selected = sel.ranges.len() == 1 && sel.current().is_full_cols() && sel.current().contains(CellRef::new(0, col));
             ctx.set_cursor_icon(if selected { CursorIcon::Move } else { CursorIcon::Default });
         }
-        app.grid.hover_cell = in_cells.then(|| geo.cell_at(sh, p));
+        // The source square covers its neighbour: no note or link tooltip of the cell under it.
+        app.grid.hover_cell = (in_cells && !on_square(p)).then(|| geo.cell_at(sh, p));
     }
 
     // Draw tab tools: the pen records a stroke, the eraser deletes ink under the pointer.
@@ -2124,15 +2177,14 @@ fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Response, geo: &
         if app.editor.is_some() && !app.commit_edit(0, 0, false, false) {
             return;
         }
-        // A click on a source marker selects the cell and hands it to the host, which opens the
-        // source; a click elsewhere in the cell selects as usual.
+        // A click on the source square hands the active cell to the host, which opens its source;
+        // the selection stays. (Source markers are indicators: a click on one selects as usual.)
         if primary_clicked
             && !mods.any()
-            && !on_handle(p)
-            && let Some(at) = app.session.active().and_then(|d| crate::source_marks::hit(geo, d, wb.active_sheet, sh, p))
+            && on_square(p)
+            && let Some(sq) = square
         {
-            let _ = app.session.run("selection.set", json!({"cell": at.a1()}));
-            app.session.ui_requests.push(gridcraft_engine::UiRequest::SourceClick { sheet: sh.name.clone(), cell: at.a1() });
+            app.session.ui_requests.push(gridcraft_engine::UiRequest::SourceClick { sheet: sh.name.clone(), cell: sq.cell.a1() });
             app.after_engine();
             app.grid.last_click = None;
             return;
@@ -2460,6 +2512,13 @@ fn fill_target(src: RangeRef, pc: CellRef) -> RangeRef {
     } else {
         RangeRef::new(CellRef::new(src.start.row, pc.col), src.end)
     }
+}
+
+/// Whether `p` (logical coordinates) is on the fill handle of the current selection area, in a
+/// pane where it is painted.
+fn on_fill_handle(geo: &Geo, sh: &Sheet, sel: &gridcraft_engine::Selection, p: Pos2) -> bool {
+    let handle = Rect::from_center_size(geo.range_rect(sh, sel.current()).right_bottom(), vec2(9.0, 9.0));
+    handle.contains(p) && geo.range_panes(RangeRef::cell(sel.current().end)).iter().any(|r| r.contains(p))
 }
 
 fn on_border(r: Rect, p: Pos2) -> bool {
@@ -3105,10 +3164,17 @@ pub(crate) fn paint_overlays(
             ui.label(tip);
         });
     }
-    // Source marker tooltip (worked out once per document version and cell, never while painting cells).
+    // Source tooltip of the source square or a marker (worked out once per document version and
+    // cell, never while painting cells). The fill handle wins over the square.
     let marker = match ui.ctx().pointer_hover_pos() {
-        Some(pos) if app.editor.is_none() && app.grid.drag == Drag::None && ui.ctx().layer_id_at(pos) == Some(ui.layer_id()) => {
-            app.session.active().and_then(|d| crate::source_marks::hit(geo, d, si, sh, geo.mirror_pos(pos)))
+        Some(pos)
+            if app.ui.source_inspector && app.editor.is_none() && app.grid.drag == Drag::None && ui.ctx().layer_id_at(pos) == Some(ui.layer_id()) =>
+        {
+            let pos = geo.mirror_pos(pos);
+            match app.grid.source_square {
+                Some(sq) if sq.contains(pos) && !on_fill_handle(geo, sh, sel, pos) => Some(sq.cell),
+                _ => app.session.active().and_then(|d| crate::source_marks::hit(geo, d, si, sh, pos)),
+            }
         }
         _ => None,
     };
@@ -3122,6 +3188,9 @@ pub(crate) fn paint_overlays(
                 ui.label(text.as_str());
             });
         }
+    } else {
+        // Nothing to name: the last tooltip is gone (and stays gone with the inspector off).
+        app.grid.source_tip = None;
     }
     // Trace precedents / dependents arrows.
     if let Some(trace) = app.grid.trace.clone()

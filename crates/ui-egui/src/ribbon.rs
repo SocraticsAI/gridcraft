@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch and Clear Sources. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch, Clear Sources and View ▸ Sources. See MODIFICATIONS.md.
 //! Title bar (Quick Access Toolbar), ribbon tabs and ribbon groups, and keyboard shortcuts.
 
 use egui::{Align2, Color32, Key, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
@@ -9,7 +9,7 @@ use crate::SheetApp;
 use crate::icons::{self, Icon};
 use crate::keytips::keytip_table;
 use crate::theme::{self, Tokens};
-use crate::widgets::{big_button, color_palette, icon_button, small_button, split_button, toggle_button};
+use crate::widgets::{big_button, big_toggle_button, color_palette, icon_button, small_button, split_button, toggle_button};
 
 pub const TABS: &[&str] = &["Home", "Insert", "Draw", "Page Layout", "Formulas", "Data", "Review", "View", "Automate"];
 
@@ -2241,6 +2241,13 @@ fn view(app: &mut SheetApp, ui: &mut Ui) {
             },
         );
     });
+    // Sources: the Source Inspector shows where hard-coded values come from.
+    sep(ui);
+    let on = app.ui.source_inspector;
+    let tip = "Show source markers on hard-coded values, and the source of the selected linked value";
+    if big_toggle_button(ui, Icon::SourceInspect, "Source\nInspector", tip, on).clicked() {
+        act(app, "view.sourceInspector", json!({"on": !on}));
+    }
 }
 
 fn automate(app: &mut SheetApp, ui: &mut Ui) {

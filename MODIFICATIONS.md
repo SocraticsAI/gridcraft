@@ -31,14 +31,22 @@ carries a notice on its first line.
    references, across sheets, 3-D references, names and tables, to linked values). Only hard-coded
    values carry a marker in their top-left corner: a linked value is shown as sourced, an unlinked number
    as unsourced, with a tooltip naming the source or saying there is none; formulas (and spilled values)
-   are traced by `source.trace` but show no marker. Clicking a marker raises
-   `UiRequest::SourceClick`, which goes to the host's `Services::source_click`. The ribbon gains Clear
-   Sources, and the marker colours are theme tokens. Files: `crates/model`
+   are traced by `source.trace` but show no marker. The markers are indicators only (a click on one
+   just selects the cell). When the active cell (only the active cell, even in a range) holds a linked
+   value, it is tinted and a source square with an up-right arrow floats just right of it (left of it
+   when that would be wholly off the pane; past a list-validation arrow; under the fill handle, which
+   wins). Hovering the square names the source; clicking it raises `UiRequest::SourceClick` for the
+   active cell, which goes to the host's `Services::source_click`, and leaves the selection as it is.
+   View ▸ Sources ▸ Source Inspector (the UI command `view.sourceInspector`, `{on?: bool}`, on by
+   default and saved with the other UI preferences in `UiState`) turns markers, tint, square and
+   tooltips off; the links stay in the model. Normal view only. The ribbon also gains Clear Sources,
+   and the marker, tint and square colours are theme tokens. Files: `crates/model`
    (`src/{cellmap,features,sheet,store}.rs`), `crates/engine` (`src/lib.rs`, the new `src/source_state.rs`,
    `src/cmd/{data,edit,format,formulas,insert,mod,sheet}.rs`, the new `src/cmd/source.rs`,
    `tests/command_sequence_fuzz.rs`), `crates/xlsx` (`src/{lib,passthrough,read,write}.rs`, the new
-   `src/sources.rs`, `src/tests/passthrough_tests.rs`) and `crates/ui-egui` (`src/{grid,lib,ribbon,theme}.rs`,
-   the new `src/source_marks.rs` and `tests/source_links.rs`). Not proposed upstream.
+   `src/sources.rs`, `src/tests/passthrough_tests.rs`) and `crates/ui-egui`
+   (`src/{control,grid,icons,lib,ribbon,theme,widgets}.rs`, the new `src/source_marks.rs` and
+   `tests/source_links.rs`). Not proposed upstream.
 
 An earlier change, the host chrome switch, was merged upstream as
 [storytold/gridcraft#1877](https://github.com/storytold/gridcraft/pull/1877) and is in GridCraft from v0.10.0.

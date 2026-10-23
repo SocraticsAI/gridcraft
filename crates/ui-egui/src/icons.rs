@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: adds the Source Inspector and up-right arrow icons. See MODIFICATIONS.md.
 //! GridCraft's icon set, drawn in code on a 16×16 design grid (original artwork; see
 //! ATTRIBUTION.md). Large ribbon icons use the same drawings at 32×32 with accent colours.
 
@@ -131,6 +132,11 @@ pub enum Icon {
     OpenFolder,
     Info,
     Print,
+    /// View ▸ Source Inspector: a page with a value marked in its top-left corner, and an arrow
+    /// up and to the right out of it (to the source).
+    SourceInspect,
+    /// An arrow up and to the right (the source square beside an active linked cell).
+    ArrowUpRight,
 }
 
 struct G<'a> {
@@ -713,6 +719,19 @@ pub fn paint(p: &Painter, rect: Rect, icon: Icon, c: Color32) {
             g.line(&[(4.0, 11.5), (1.5, 11.5), (1.5, 5.5), (14.5, 5.5), (14.5, 11.5), (12.0, 11.5)], c, 1.1);
             g.line(&[(4.5, 9.0), (4.5, 14.5), (11.5, 14.5), (11.5, 9.0), (4.5, 9.0)], c, 1.1);
             g.circle(12.3, 7.6, 0.6, Some(c), None);
+        }
+        Icon::SourceInspect => {
+            g.line(&[(8.5, 1.5), (2.5, 1.5), (2.5, 14.5), (11.5, 14.5), (11.5, 10.0)], c, 1.1);
+            g.poly(&[(2.5, 1.5), (6.5, 1.5), (2.5, 5.5)], BLUE);
+            for y in [8.0, 10.5] {
+                g.stroke(&[(4.5, y), (8.5, y)], light);
+            }
+            g.line(&[(7.5, 8.5), (14.0, 2.0)], BLUE, 1.4);
+            g.line(&[(9.5, 2.0), (14.0, 2.0), (14.0, 6.5)], BLUE, 1.4);
+        }
+        Icon::ArrowUpRight => {
+            g.line(&[(4.0, 12.0), (12.0, 4.0)], c, 1.6);
+            g.line(&[(5.5, 4.0), (12.0, 4.0), (12.0, 10.5)], c, 1.6);
         }
     }
 }
