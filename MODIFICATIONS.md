@@ -43,7 +43,7 @@ carries a notice on its first line.
    Automate) and before any contextual tab, runs the UI command `view.sourceInspector` (`{on?: bool}`,
    on by default and saved with the other UI preferences in `UiState`); it is a button, not a tab, stays
    in the tab row when the ribbon is collapsed, and turns markers, tint, square and tooltips off; the
-   links stay in the model. It is drawn like an inactive tab label, its icon blue and underlined while on.
+   links stay in the model. It is drawn like an inactive tab label, its icon blue while on.
    Normal view only. The ribbon also gains Clear Sources, and the marker, tint and square colours are
    theme tokens. Files: `crates/model`
    (`src/{cellmap,features,sheet,store}.rs`), `crates/engine` (`src/lib.rs`, the new `src/source_state.rs`,

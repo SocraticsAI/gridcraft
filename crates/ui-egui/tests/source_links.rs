@@ -311,6 +311,7 @@ fn the_sources_toggle_looks_like_a_tab_label_with_its_icon_showing_the_state() {
         "no filled pill: {on:?}"
     );
     assert!(uses_color(&on, t.sourced_mark), "the icon is in the marker blue while on");
+    assert!(!uses_color(&on, t.accent), "no underline: that marks the active tab");
     let label = on.iter().find_map(|s| match s {
         egui::Shape::Text(x) if x.galley.text() == "Sources" => Some(x.clone()),
         _ => None,
@@ -328,6 +329,7 @@ fn the_sources_toggle_looks_like_a_tab_label_with_its_icon_showing_the_state() {
     let off = shapes_in(&h, rect);
     assert!(!uses_color(&off, t.sourced_mark), "a dim icon while off");
     assert!(uses_color(&off, t.text_dim));
+    assert!(!uses_color(&off, t.accent));
 }
 
 #[test]

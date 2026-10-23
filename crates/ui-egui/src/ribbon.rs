@@ -264,7 +264,7 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
 
 /// The Source Inspector toggle in the tab row (`view.sourceInspector`): a button, not a tab, so a
 /// click neither switches tabs nor collapses the ribbon. Styled as an inactive tab label; while on,
-/// its icon is in the marker blue and it carries the active tab's underline.
+/// its icon is in the marker blue (no underline: that marks the active tab).
 fn sources_toggle(app: &mut SheetApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let lang = app.ui.language;
@@ -281,10 +281,6 @@ fn sources_toggle(app: &mut SheetApp, ui: &mut Ui) {
     let icon_color = if on { t.sourced_mark } else { t.text_dim };
     icons::paint(ui.painter(), Rect::from_center_size(pos2(left + icon / 2.0, r.center().y), vec2(icon, icon)), Icon::SourceInspect, icon_color);
     ui.painter().galley(pos2(left + icon + gap, r.center().y - text.size().y / 2.0), text, t.text_dim);
-    if on {
-        let ul = Rect::from_center_size(pos2(r.center().x, r.bottom() - 3.0), vec2(content_w.clamp(20.0, 40.0), 3.0));
-        ui.painter().rect_filled(ul, 1.5, t.accent);
-    }
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label));
     if resp.on_hover_text(lang.tr("Source Inspector: show cell sources")).clicked() {
         act(app, "view.sourceInspector", json!({}));
