@@ -1,7 +1,8 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
 //! The Source Inspector: markers on linked hard-coded numbers only (hovering one names the value's source;
 //! a click only selects), and for an active linked value a tint and a source square whose click
-//! tells the host. Formulas have none. The Sources toggle in the sheet-tab bar turns it all off.
+//! tells the host. Formulas have none. A linked number whose source the host reported missing
+//! draws the same in grey, with a "?" square. The Sources toggle in the sheet-tab bar turns it all off.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -78,7 +79,8 @@ fn tips_name_the_source_of_hard_coded_values_only() {
     for formula in ["C2", "C3", "C4", "C5"] {
         assert_eq!(tip(formula), None, "{formula} is a formula");
     }
-    let ledger = SourceLink { file: "Data Room/GL/GL_Detail.xlsx".into(), locator: "GL Detail!C16102".into(), store_row: String::new() };
+    let ledger =
+        SourceLink { file: "Data Room/GL/GL_Detail.xlsx".into(), locator: "GL Detail!C16102".into(), store_row: String::new(), ..Default::default() };
     assert_eq!(source_marks::label(&ledger), "GL Detail · GL Detail!C16102");
 }
 
@@ -689,4 +691,100 @@ fn a_linked_label_beside_a_linked_figure_shows_nothing() {
     assert_eq!(square(&h), None, "no square for a label");
     assert!(rects(&h, t.source_selected_fill).is_empty(), "no tint for a label");
     assert!(h.state().session.active().unwrap().wb.active().unwrap().sources.contains_key(&CellRef::parse("A2").unwrap()), "the link stays");
+}
+
+/// The rectangles filled with `color` and outlined in the missing-source grey (a missing source's square).
+fn outlined_grey(h: &Harness, color: egui::Color32) -> Vec<egui::Rect> {
+    painted_over_grid(h, color, 1.0, Tokens::light().source_missing_mark)
+}
+
+fn set_missing(h: &mut Harness, missing: serde_json::Value) {
+    h.state_mut().session.execute("source.setMissing", json!({ "missing": missing })).unwrap();
+    h.run_steps(2);
+}
+
+#[test]
+fn a_missing_source_draws_its_linked_number_grey_until_cleared() {
+    let (mut h, clicks) = with_clicks();
+    let t = Tokens::light();
+    let (dirty, undo, revision) = {
+        let d = h.state().session.active().unwrap();
+        (d.is_dirty(), d.undo.len(), d.revision)
+    };
+    // B2 missing; B3 (an unlinked number) and a formula listed too: they show nothing.
+    set_missing(&mut h, json!([{"sheet": "Sheet1", "cell": "B2"}, {"sheet": "Sheet1", "cell": "B3"}, {"sheet": "Sheet1", "cell": "C2"}]));
+    let grey = marks(&h, t.source_missing_mark);
+    let blue = marks(&h, t.sourced_mark);
+    assert_eq!(grey, [marker(&h, "B2").min], "only the linked B2 turns grey: {grey:?}");
+    assert_eq!(blue, [marker(&h, "D2").min], "D2's source is there: still blue");
+    // Display state only: not dirty, no undo step, no revision.
+    {
+        let d = h.state().session.active().unwrap();
+        assert_eq!((d.is_dirty(), d.undo.len(), d.revision), (dirty, undo, revision));
+    }
+    // Selected: a grey tint and a grey square with a "?", named "Source missing".
+    select(&mut h, "B2");
+    let b2 = cell_rect(&h, "B2");
+    assert_eq!(rects(&h, t.source_missing_selected_fill), [b2], "a light-grey tint");
+    assert!(rects(&h, t.source_selected_fill).is_empty(), "no blue tint");
+    let sq = square(&h).expect("a square");
+    assert!(sq.missing);
+    assert_eq!(outlined_grey(&h, t.source_missing_square_fill), [sq.rect], "a grey square, outlined in grey");
+    assert!(outlined(&h, t.source_square_fill).is_empty(), "no blue square");
+    let q = texts(&h, "?");
+    assert_eq!(q.len(), 1, "a \"?\" in the square: {q:?}");
+    assert!(sq.rect.contains(q[0].0.center()));
+    assert_eq!(q[0].1, t.source_missing_square_ink);
+    h.input_mut().events.push(Event::PointerMoved(sq.rect.center()));
+    h.run_steps(2);
+    assert_eq!(tip_shown(&h).as_deref(), Some("Source missing"));
+    assert_eq!(outlined_grey(&h, t.source_missing_square_hover), [sq.rect], "the square deepens under the pointer");
+    let at = marker_center(&h, "D2");
+    h.input_mut().events.push(Event::PointerMoved(at));
+    h.run_steps(2);
+    assert_eq!(tip_shown(&h).as_deref(), Some("GL Detail · GL Detail!C16102"), "D2 still names its source");
+    let at = marker_center(&h, "B2");
+    h.input_mut().events.push(Event::PointerMoved(at));
+    h.run_steps(2);
+    assert_eq!(tip_shown(&h).as_deref(), Some("Source missing"), "the grey marker says so too");
+    // The grey square's click still goes to the host, which looks for the document.
+    click(&mut h, sq.rect.center());
+    assert_eq!(clicks.borrow().as_slice(), [("Sheet1".to_string(), "B2".to_string())]);
+    assert_eq!(active(&h), "B2");
+    // An empty set clears it: blue again, tooltip names the source again.
+    set_missing(&mut h, json!([]));
+    assert!(marks(&h, t.source_missing_mark).is_empty());
+    assert_eq!(marks(&h, t.sourced_mark).len(), 2);
+    assert_eq!(rects(&h, t.source_selected_fill), [b2]);
+    assert!(rects(&h, t.source_missing_selected_fill).is_empty());
+    let sq = square(&h).expect("a square");
+    assert!(!sq.missing);
+    assert!(texts(&h, "?").is_empty());
+    h.input_mut().events.push(Event::PointerMoved(sq.rect.center()));
+    h.run_steps(2);
+    assert_eq!(tip_shown(&h).as_deref(), Some("Heritage Trust Bank Statement September 2019 · Beginning Balance"));
+    let d = h.state().session.active().unwrap();
+    assert_eq!((d.is_dirty(), d.undo.len(), d.revision), (dirty, undo, revision));
+}
+
+#[test]
+fn a_missing_entry_has_no_effect_once_the_link_is_gone_or_moved() {
+    let mut h = harness(session(), Services::default());
+    let t = Tokens::light();
+    set_missing(&mut h, json!([{"sheet": "Sheet1", "cell": "B2"}]));
+    assert_eq!(marks(&h, t.source_missing_mark).len(), 1);
+    // A row inserted above moves the link to B3: the entry stays on B2, which holds no link.
+    h.state_mut().session.execute("home.insertRows", json!({"rows": "1:1"})).unwrap();
+    h.run_steps(2);
+    assert!(marks(&h, t.source_missing_mark).is_empty());
+    assert_eq!(marks(&h, t.sourced_mark).len(), 2, "the moved link draws blue");
+    // Back on B2, then typed over: the link is gone, so nothing.
+    h.state_mut().session.execute("edit.undo", json!({})).unwrap();
+    h.run_steps(2);
+    assert_eq!(marks(&h, t.source_missing_mark).len(), 1, "undo leaves the set alone");
+    h.state_mut().session.execute("cell.set", json!({"cell": "B2", "input": "5"})).unwrap();
+    select(&mut h, "B2");
+    assert!(marks(&h, t.source_missing_mark).is_empty());
+    assert_eq!(square(&h), None);
+    assert!(rects(&h, t.source_missing_selected_fill).is_empty());
 }

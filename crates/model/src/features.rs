@@ -341,7 +341,7 @@ pub struct Hyperlink {
 /// Where a hard-coded value came from: a document in the engagement's data room and the place
 /// in it. A formula has none of its own (it is traced through its references). Moves with its
 /// cell like a note; typing over the cell drops it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceLink {
     /// The source document, relative to the data room root.
@@ -350,6 +350,47 @@ pub struct SourceLink {
     pub locator: String,
     /// The lineage store row the value was read from (for audit; opening the source doesn't need it).
     pub store_row: String,
+    /// The document's fingerprint when the link was made: its SHA-256, 64 lowercase hex digits
+    /// ([`SourceLink::is_hash`]), so a host can find the document again after it moves. A value
+    /// that isn't one is dropped on load.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "de_source_hash")]
+    pub hash: Option<String>,
+    /// The document's size in bytes when the link was made (with `hash`). A value that isn't a
+    /// whole number of bytes is dropped on load.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "de_source_size")]
+    pub size: Option<u64>,
+}
+
+impl SourceLink {
+    /// Whether `s` is a SHA-256 as links keep it: exactly 64 lowercase hex digits.
+    pub fn is_hash(s: &str) -> bool {
+        s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    }
+}
+
+/// A `hash` or `size` as found in a file: the expected kind, or anything else (ignored).
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Lenient<T> {
+    Ok(T),
+    Other(serde::de::IgnoredAny),
+}
+
+/// A link's `hash` as loaded: kept when it is a well-formed SHA-256, dropped (not an error, so the
+/// rest of the file still loads) when it isn't.
+fn de_source_hash<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
+    Ok(match Option::<Lenient<String>>::deserialize(d)? {
+        Some(Lenient::Ok(s)) if SourceLink::is_hash(&s) => Some(s),
+        _ => None,
+    })
+}
+
+/// A link's `size` as loaded: kept when it is a whole number of bytes, dropped when it isn't.
+fn de_source_size<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<u64>, D::Error> {
+    Ok(match Option::<Lenient<u64>>::deserialize(d)? {
+        Some(Lenient::Ok(n)) => Some(n),
+        _ => None,
+    })
 }
 
 // ---------------------------------------------------------------- drawing objects

@@ -114,6 +114,11 @@ pub struct DocState {
     /// The format `path`'s content was recognised as when its extension doesn't name one (an
     /// XLSX called `budget.dat`): Save writes it back in that format.
     pub content_kind: Option<io::FileKind>,
+    /// Cells whose source document the host could not find (`source.setMissing`), by sheet name:
+    /// display state only (a linked number among them draws grey), never saved, never in undo
+    /// snapshots and never an edit. An entry for a cell that no longer holds a linked number has
+    /// no effect.
+    pub source_missing: std::collections::BTreeMap<String, std::collections::BTreeSet<CellRef>>,
 }
 
 static NEXT_UID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -139,6 +144,7 @@ impl DocState {
             sheet_selections: vec![],
             unlocked_ranges: vec![],
             content_kind: None,
+            source_missing: Default::default(),
         }
     }
     pub fn is_dirty(&self) -> bool {
@@ -175,6 +181,11 @@ impl DocState {
         if !dirty {
             self.saved = self.wb.clone();
         }
+    }
+    /// Whether the host reported the source of `c` on the sheet named `sheet` missing
+    /// (`source.setMissing`). Says nothing about whether `c` holds a linked number.
+    pub fn is_source_missing(&self, sheet: &str, c: CellRef) -> bool {
+        self.source_missing.get(sheet).is_some_and(|cells| cells.contains(&c))
     }
     pub fn display_title(&self) -> String {
         self.path

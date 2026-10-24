@@ -43,7 +43,16 @@ carries a notice on its first line.
    small labelled switch (a 32×16 pill with a white thumb, Socratics' small toggle), dropping its label
    when the bar is too short to keep the scrollbar usable. The tab viewport is sized to its tabs, so New
    Sheet follows the last tab; New Sheet is named for assistive tech. Normal view only. The ribbon also
-   gains Clear Sources, and the marker, tint, square and switch colours are theme tokens. Files: `crates/model`
+   gains Clear Sources, and the marker, tint, square and switch colours are theme tokens. A link may also
+   carry its document's fingerprint, `hash` (SHA-256, 64 lowercase hex digits) and `size` (bytes), so the
+   host can find the document after it moves; `source.set` takes them (refusing malformed ones), and they
+   are saved in JSON and as `hash`/`size` attributes in the `.xlsx` part (a malformed one is dropped on
+   load, keeping the link). `source.list` returns every link in the workbook (sheet order, then row, then
+   column). `source.setMissing` (`{missing: [{sheet, cell}]}`) replaces the document's set of cells whose
+   source the host could not find: display state kept on the open document, never saved, journaled,
+   undone or marking it dirty. A linked number in it draws the same treatment in grey (marker, tint, and a
+   square holding a "?" with the tooltip "Source missing"); its square's click still goes to the host.
+   Files: `crates/model`
    (`src/{cellmap,features,sheet,store}.rs`), `crates/engine` (`src/lib.rs`, the new `src/source_state.rs`,
    `src/cmd/{data,edit,format,formulas,insert,mod,sheet}.rs`, the new `src/cmd/source.rs`,
    `tests/command_sequence_fuzz.rs`), `crates/xlsx` (`src/{lib,passthrough,read,write}.rs`, the new

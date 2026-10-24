@@ -3,9 +3,12 @@
 //! marker, a tiny square (`Tokens::sourced_mark`) in the top-left corner of a hard-coded number
 //! that has a source link, with a tooltip naming the source; and for an active cell holding a
 //! linked number, a tint over the cell (`Tokens::source_selected_fill`) and a source square beside
-//! it whose click goes to the host. Unlinked numbers, text and formulas show nothing. Normal view
-//! only: Page Layout view shows nothing. The markers are indicators only; the square is what is
-//! clicked.
+//! it whose click goes to the host. A linked number the host reported missing
+//! (`source.setMissing`: its document is gone) draws the same in grey (`Tokens::source_missing_*`),
+//! its square holding a "?" and its tooltip saying "Source missing"; its square's click still goes
+//! to the host, which looks for the document. Unlinked numbers, text and formulas show nothing.
+//! Normal view only: Page Layout view shows nothing. The markers are indicators only; the square
+//! is what is clicked.
 
 use egui::{Painter, Pos2, Rect, Stroke, pos2, vec2};
 use gridcraft_engine::core::{CellRef, RangeRef};
@@ -25,6 +28,8 @@ pub fn marker_size(z: f32) -> f32 {
 
 /// Smallest side of the source square, in points.
 pub const SQUARE_MIN: f32 = 14.0;
+/// The tooltip of a linked number whose source the host reported missing.
+pub const MISSING_TIP: &str = "Source missing";
 /// Gap between the active cell (or its validation arrow) and the source square, clear of the
 /// selection outline.
 const SQUARE_GAP: f32 = 3.0;
@@ -59,7 +64,8 @@ pub fn paint_quadrant(d: &DocState, p: &Painter, geo: &Geo, si: usize, sh: &Shee
             continue;
         }
         let Some(r) = cell_area(geo, sh, c) else { continue };
-        p.rect_filled(Rect::from_min_size(r.left_top(), vec2(s, s)), 0.0, t.sourced_mark);
+        let color = if d.is_source_missing(&sh.name, c) { t.source_missing_mark } else { t.sourced_mark };
+        p.rect_filled(Rect::from_min_size(r.left_top(), vec2(s, s)), 0.0, color);
     }
 }
 
@@ -76,31 +82,39 @@ pub fn hit(geo: &Geo, d: &DocState, si: usize, sh: &Sheet, p: Pos2) -> Option<Ce
     marker_rect(geo, sh, anchor)?.contains(p).then_some(anchor)
 }
 
+/// Whether `c` on sheet `si` is a linked number whose source the host reported missing: it draws
+/// grey. An entry for a cell that isn't a linked number has no effect.
+pub fn is_missing(d: &DocState, si: usize, c: CellRef) -> bool {
+    d.wb.sheet(si).is_some_and(|sh| d.is_source_missing(&sh.name, c)) && is_sourced(&d.wb, si, c)
+}
+
 /// The active cell (its merged area's anchor) when the Source Inspector shows it as linked: the
 /// inspector is on, the view is Normal, no cell is being edited and it holds a linked hard-coded
-/// number. It gets the tint and the source square.
-pub fn active_linked(app: &SheetApp, geo: &Geo, si: usize, sh: &Sheet, sel: &Selection) -> Option<CellRef> {
+/// number. It gets the tint and the source square; `missing` when its source was reported missing.
+pub fn active_linked(app: &SheetApp, geo: &Geo, si: usize, sh: &Sheet, sel: &Selection) -> Option<(CellRef, bool)> {
     if !app.ui.source_inspector || geo.paper.is_some() || app.editor.is_some() {
         return None;
     }
     let d = app.session.active()?;
     let anchor = sh.merge_at(sel.active).map_or(sel.active, |m| m.start);
-    is_sourced(&d.wb, si, anchor).then_some(anchor)
+    is_sourced(&d.wb, si, anchor).then(|| (anchor, d.is_source_missing(&sh.name, anchor)))
 }
 
 /// The source square beside an active linked cell, in logical coordinates: `rect` is where it is
 /// painted and `clip` the part of the cells it may show in (the panes of its row and those right of
-/// its column, so it never covers the headers or the frozen columns of a scrolled cell).
+/// its column, so it never covers the headers or the frozen columns of a scrolled cell). `missing`:
+/// the cell's source was reported missing, so it is grey with a "?".
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SourceSquare {
     pub cell: CellRef,
     pub rect: Rect,
     pub clip: Rect,
+    pub missing: bool,
 }
 
 impl SourceSquare {
     /// Where it is painted, and the cell it belongs to.
-    pub fn new(geo: &Geo, sh: &Sheet, cell: CellRef) -> Option<SourceSquare> {
+    pub fn new(geo: &Geo, sh: &Sheet, cell: CellRef, missing: bool) -> Option<SourceSquare> {
         if geo.hidden_under_frozen(sh, cell) || sh.row_height(cell.row) <= 0.0 {
             return None;
         }
@@ -125,7 +139,7 @@ impl SourceSquare {
         } else {
             right
         };
-        let square = SourceSquare { cell, rect, clip };
+        let square = SourceSquare { cell, rect, clip, missing };
         (square.visible().is_positive() && square.visible().is_finite()).then_some(square)
     }
 
@@ -139,14 +153,22 @@ impl SourceSquare {
         self.visible().contains(p)
     }
 
-    /// Paints the square into the pane `p` paints, outlined in the marker blue, in the hover
-    /// colour while `hot`.
+    /// Paints the square into the pane `p` paints, outlined in its marker's colour, in the hover
+    /// colour while `hot`: an up-right arrow in blue, or a "?" in grey when the source is missing.
     pub fn paint(&self, p: &Painter, hot: bool, t: &Tokens) {
         let p = p.with_clip_rect(p.clip_rect().intersect(self.clip));
         let side = self.rect.width();
-        let fill = if hot { t.source_square_hover } else { t.source_square_fill };
-        p.rect(self.rect, (side * 0.2).clamp(2.0, 4.0), fill, Stroke::new(1.0, t.sourced_mark), egui::StrokeKind::Inside);
-        icons::paint(&p, self.rect.shrink(side * 0.2), Icon::ArrowUpRight, t.source_square_ink);
+        let (fill, hover, outline, ink) = if self.missing {
+            (t.source_missing_square_fill, t.source_missing_square_hover, t.source_missing_mark, t.source_missing_square_ink)
+        } else {
+            (t.source_square_fill, t.source_square_hover, t.sourced_mark, t.source_square_ink)
+        };
+        p.rect(self.rect, (side * 0.2).clamp(2.0, 4.0), if hot { hover } else { fill }, Stroke::new(1.0, outline), egui::StrokeKind::Inside);
+        if self.missing {
+            p.text(self.rect.center(), egui::Align2::CENTER_CENTER, "?", crate::theme::ui_bold(side * 0.7), ink);
+        } else {
+            icons::paint(&p, self.rect.shrink(side * 0.2), Icon::ArrowUpRight, ink);
+        }
     }
 }
 
@@ -166,4 +188,9 @@ pub fn tip(wb: &Workbook, si: usize, c: CellRef) -> Option<String> {
         return None;
     }
     wb.sheet(si)?.sources.get(&c).map(label)
+}
+
+/// [`tip`] for a cell of the document `d`: "Source missing" when its source was reported missing.
+pub fn doc_tip(d: &DocState, si: usize, c: CellRef) -> Option<String> {
+    if is_missing(d, si, c) { Some(MISSING_TIP.to_string()) } else { tip(&d.wb, si, c) }
 }

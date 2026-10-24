@@ -12,6 +12,10 @@ use crate::Session;
 
 /// Most cells one `source.set` may name.
 const MAX_CELLS: u64 = 1_000_000;
+/// Most links one `source.list` returns (as many as a saved file carries).
+const MAX_LISTED: usize = 2_000_000;
+/// Most entries one `source.setMissing` may name.
+const MAX_MISSING: usize = 1_000_000;
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
@@ -20,11 +24,30 @@ pub fn specs() -> Vec<CommandSpec> {
             "Set Cell Sources",
             [],
             None,
-            "{sheet?, range: \"A1:C3\", links: [[{file, locator, storeRow} | null]] (one row per range row; null removes a link)} → {linked}",
+            "{sheet?, range: \"A1:C3\", links: [[{file, locator, storeRow, hash?, size?} | null]] (one row per range row; null removes a link; hash: SHA-256 as 64 lowercase hex, size: bytes)} → {linked}",
             has_doc,
             set_links
         ),
-        cmd!(query "source.get", "Cell Source", [], None, "{sheet?, cell: \"B2\"} → {link: {file, locator, storeRow} | null}", has_doc, get_link),
+        cmd!(query "source.get", "Cell Source", [], None, "{sheet?, cell: \"B2\"} → {link: {file, locator, storeRow, hash?, size?} | null}", has_doc, get_link),
+        cmd!(
+            query "source.list",
+            "List Cell Sources",
+            [],
+            None,
+            "{} → {links: [{sheet, cell, link}], truncated} (every link in the workbook: sheet order, then row, then column)",
+            has_doc,
+            list_links
+        ),
+        // Display state, not an edit: never journaled, undone, saved or marking the workbook dirty.
+        cmd!(
+            query "source.setMissing",
+            "Set Missing Sources",
+            [],
+            None,
+            "{missing: [{sheet, cell: \"B2\"}]} → {missing, skipped} (replaces the set; linked numbers in it draw grey; unknown sheets and bad cells are skipped)",
+            has_doc,
+            set_missing
+        ),
         cmd!("source.clear", "Clear Cell Sources", [], None, "{sheet?, range: \"A1:C3\"} → {cleared}", has_doc, clear_links),
         cmd!(
             query "source.trace",
@@ -47,7 +70,16 @@ fn link_param(v: &Json) -> std::result::Result<Option<SourceLink>, String> {
             let text = |k: &str| o.get(k).and_then(Json::as_str).map(str::trim).filter(|t| !t.is_empty()).map(str::to_string);
             let file = text("file").ok_or("a link needs a `file`")?;
             let locator = text("locator").ok_or("a link needs a `locator`")?;
-            Ok(Some(SourceLink { file, locator, store_row: text("storeRow").unwrap_or_default() }))
+            let hash = match o.get("hash") {
+                None | Some(Json::Null) => None,
+                Some(Json::String(h)) if SourceLink::is_hash(h) => Some(h.clone()),
+                Some(_) => return Err("`hash` is a SHA-256 as 64 lowercase hex digits".into()),
+            };
+            let size = match o.get("size") {
+                None | Some(Json::Null) => None,
+                Some(n) => Some(n.as_u64().ok_or("`size` is a whole number of bytes")?),
+            };
+            Ok(Some(SourceLink { file, locator, store_row: text("storeRow").unwrap_or_default(), hash, size }))
         }
         _ => Err("each link is an object or null".into()),
     }
@@ -105,6 +137,49 @@ fn get_link(s: &mut Session, p: &Json) -> Result<Json> {
     };
     let link = s.doc()?.wb.sheet(sheet).and_then(|sh| sh.sources.get(&at)).cloned();
     Ok(json!({"link": link}))
+}
+
+fn list_links(s: &mut Session, _p: &Json) -> Result<Json> {
+    let d = s.doc()?;
+    let mut links = Vec::new();
+    let mut truncated = false;
+    'sheets: for sh in &d.wb.sheets {
+        for (c, l) in &sh.sources {
+            if links.len() >= MAX_LISTED {
+                truncated = true;
+                break 'sheets;
+            }
+            links.push(json!({"sheet": sh.name, "cell": c.a1(), "link": l}));
+        }
+    }
+    Ok(json!({"links": links, "truncated": truncated}))
+}
+
+/// Replaces the document's missing-source set. Entries naming an unknown sheet or a bad cell are
+/// skipped (and counted); a list longer than [`MAX_MISSING`] is refused.
+fn set_missing(s: &mut Session, p: &Json) -> Result<Json> {
+    let Some(entries) = p.get("missing").and_then(Json::as_array) else {
+        return Err(bad("source.setMissing", "missing `missing` (a list of {sheet, cell}, empty to clear)"));
+    };
+    if entries.len() > MAX_MISSING {
+        return Err(bad("source.setMissing", format!("at most {MAX_MISSING} entries")));
+    }
+    let d = s.doc_mut()?;
+    let mut set: std::collections::BTreeMap<String, std::collections::BTreeSet<CellRef>> = Default::default();
+    let mut skipped = 0usize;
+    for e in entries {
+        let sheet = e.get("sheet").and_then(Json::as_str).and_then(|n| d.wb.sheet_index(n)).and_then(|i| d.wb.sheet(i));
+        let cell = e.get("cell").and_then(Json::as_str).and_then(|a| CellRef::parse(a.trim())).filter(CellRef::is_valid);
+        match (sheet, cell) {
+            (Some(sh), Some(c)) => {
+                set.entry(sh.name.clone()).or_default().insert(c);
+            }
+            _ => skipped += 1,
+        }
+    }
+    let count: usize = set.values().map(|c| c.len()).sum();
+    d.source_missing = set;
+    Ok(json!({"missing": count, "skipped": skipped}))
 }
 
 fn clear_links(s: &mut Session, p: &Json) -> Result<Json> {
@@ -210,10 +285,158 @@ mod tests {
         assert_eq!(link_count(&s, "Other"), 0);
     }
 
+    const HASH: &str = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+
+    fn fingerprinted(locator: &str) -> Json {
+        let mut l = link_json(locator);
+        l["hash"] = json!(HASH);
+        l["size"] = json!(48_213);
+        l
+    }
+
+    #[test]
+    fn fingerprints_round_trip_through_set_get_and_saved_files() {
+        let mut s = s();
+        s.execute("range.setValues", json!({"range": "B2", "values": [[10, 20]]})).unwrap();
+        s.execute("source.set", json!({"range": "B2:C2", "links": [[fingerprinted("a"), link_json("b")]]})).unwrap();
+        let got = s.execute("source.get", json!({"cell": "B2"})).unwrap();
+        assert_eq!((got["link"]["hash"].as_str(), got["link"]["size"].as_u64()), (Some(HASH), Some(48_213)));
+        let plain = s.execute("source.get", json!({"cell": "C2"})).unwrap();
+        let fields = plain["link"].as_object().unwrap();
+        assert!(!fields.contains_key("hash") && !fields.contains_key("size"), "absent stays absent: {plain}");
+        let before = s.doc().unwrap().wb.sheet(0).unwrap().sources.clone();
+        for name in ["book.json", "book.xlsx"] {
+            let bytes = crate::io::save_bytes(&s.doc().unwrap().wb, name).unwrap();
+            let (back, _) = crate::io::open_bytes(name, &bytes).unwrap();
+            assert_eq!(back.sheet(0).unwrap().sources, before, "{name}");
+            let c2 = back.sheet(0).unwrap().sources.get(&CellRef::parse("C2").unwrap()).unwrap();
+            assert_eq!((c2.hash.as_deref(), c2.size), (None, None), "{name}");
+        }
+        // The trace carries them too.
+        let t = s.execute("source.trace", json!({"cell": "B2"})).unwrap();
+        assert_eq!(t["links"][0]["link"]["hash"], HASH);
+    }
+
+    #[test]
+    fn bad_fingerprints_are_refused_and_change_nothing() {
+        let mut s = s();
+        s.execute("source.set", json!({"range": "A1", "links": [[fingerprinted("kept")]]})).unwrap();
+        let bad_hashes = [json!(HASH.to_uppercase()), json!(&HASH[1..]), json!(format!("{HASH}0")), json!("g".repeat(64)), json!(12), json!({})];
+        for h in bad_hashes {
+            let mut l = link_json("x");
+            l["hash"] = h.clone();
+            assert!(matches!(s.execute("source.set", json!({"range": "A1", "links": [[l]]})), Err(crate::EngineError::BadParams { .. })), "hash {h}");
+        }
+        for n in [json!(-1), json!(1.5), json!("12"), json!(true)] {
+            let mut l = link_json("x");
+            l["size"] = n.clone();
+            assert!(matches!(s.execute("source.set", json!({"range": "A1", "links": [[l]]})), Err(crate::EngineError::BadParams { .. })), "size {n}");
+        }
+        assert_eq!(locator(&s, "A1").as_deref(), Some("kept"));
+        // null is the same as leaving them out.
+        let mut l = link_json("nulls");
+        l["hash"] = Json::Null;
+        l["size"] = Json::Null;
+        s.execute("source.set", json!({"range": "A1", "links": [[l]]})).unwrap();
+        let got = s.execute("source.get", json!({"cell": "A1"})).unwrap();
+        assert!(got["link"].get("hash").is_none() && got["link"].get("size").is_none());
+    }
+
+    #[test]
+    fn list_returns_every_link_in_sheet_then_row_then_column_order() {
+        let mut s = s();
+        assert_eq!(s.execute("source.list", json!({})).unwrap(), json!({"links": [], "truncated": false}));
+        s.execute("home.insertSheet", json!({"name": "Second"})).unwrap();
+        // Set out of order, on both sheets.
+        s.execute("source.set", json!({"sheet": "Second", "range": "A1", "links": [[link_json("s2a1")]]})).unwrap();
+        s.execute("source.set", json!({"sheet": "Sheet1", "range": "C2", "links": [[fingerprinted("c2")]]})).unwrap();
+        s.execute("source.set", json!({"sheet": "Sheet1", "range": "AA1", "links": [[link_json("aa1")]]})).unwrap();
+        s.execute("source.set", json!({"sheet": "Sheet1", "range": "B2", "links": [[link_json("b2")]]})).unwrap();
+        let order = s.doc().unwrap().wb.sheets.iter().map(|sh| sh.name.clone()).collect::<Vec<_>>();
+        let r = s.execute("source.list", json!({})).unwrap();
+        assert_eq!(r["truncated"], false);
+        let got: Vec<(String, String, String)> = r["links"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| (x["sheet"].as_str().unwrap().into(), x["cell"].as_str().unwrap().into(), x["link"]["locator"].as_str().unwrap().into()))
+            .collect();
+        let mut want = vec![
+            ("Sheet1".to_string(), "AA1".to_string(), "aa1".to_string()),
+            ("Sheet1".into(), "B2".into(), "b2".into()),
+            ("Sheet1".into(), "C2".into(), "c2".into()),
+        ];
+        let second = ("Second".to_string(), "A1".to_string(), "s2a1".to_string());
+        if order.first().map(String::as_str) == Some("Second") {
+            want.insert(0, second);
+        } else {
+            want.push(second);
+        }
+        assert_eq!(got, want, "sheet order {order:?}");
+        let c2 = r["links"].as_array().unwrap().iter().find(|x| x["cell"] == "C2").unwrap();
+        assert_eq!(c2["link"], fingerprinted("c2"));
+        // A query: no journal entry, no undo step.
+        let undo = s.doc().unwrap().undo.len();
+        assert!(s.journal.iter().all(|(id, _)| id != "source.list"));
+        assert_eq!(s.doc().unwrap().undo.len(), undo);
+    }
+
+    #[test]
+    fn set_missing_replaces_the_set_skips_bad_entries_and_is_not_an_edit() {
+        let mut s = s();
+        put(&mut s, "B2", 1.0, "b2");
+        s.execute("home.insertSheet", json!({"name": "Other"})).unwrap();
+        let dirty = s.doc().unwrap().is_dirty();
+        let (undo, revision, journal) = (s.doc().unwrap().undo.len(), s.doc().unwrap().revision, s.journal.len());
+        let r = s
+            .execute(
+                "source.setMissing",
+                json!({"missing": [
+                    {"sheet": "Sheet1", "cell": "B2"},
+                    {"sheet": "other", "cell": "C3"},
+                    {"sheet": "Nope", "cell": "A1"},
+                    {"sheet": "Sheet1", "cell": "not a cell"},
+                    {"sheet": "Sheet1", "cell": "XFE1"},
+                    {"cell": "A1"},
+                    5,
+                    {"sheet": "Sheet1", "cell": "B2"}
+                ]}),
+            )
+            .unwrap();
+        assert_eq!(r, json!({"missing": 2, "skipped": 5}));
+        let d = s.doc().unwrap();
+        assert!(d.is_source_missing("Sheet1", CellRef::parse("B2").unwrap()));
+        assert!(d.is_source_missing("Other", CellRef::parse("C3").unwrap()), "stored under the sheet's own name");
+        assert_eq!((d.is_dirty(), d.undo.len(), d.revision, s.journal.len()), (dirty, undo, revision, journal));
+        // Replaced, not added to; an empty list clears it.
+        s.execute("source.setMissing", json!({"missing": [{"sheet": "Sheet1", "cell": "D4"}]})).unwrap();
+        assert!(!s.doc().unwrap().is_source_missing("Sheet1", CellRef::parse("B2").unwrap()));
+        s.execute("source.setMissing", json!({"missing": []})).unwrap();
+        assert!(s.doc().unwrap().source_missing.is_empty());
+        // Bad params change nothing.
+        s.execute("source.setMissing", json!({"missing": [{"sheet": "Sheet1", "cell": "B2"}]})).unwrap();
+        for p in [json!({}), json!({"missing": "B2"}), json!({"missing": {"sheet": "Sheet1"}})] {
+            assert!(s.execute("source.setMissing", p).is_err());
+        }
+        assert!(s.doc().unwrap().is_source_missing("Sheet1", CellRef::parse("B2").unwrap()));
+        // Never saved, and undo leaves it alone.
+        let bytes = crate::io::save_bytes(&s.doc().unwrap().wb, "book.json").unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("issing"));
+        s.execute("edit.undo", json!({})).unwrap();
+        assert!(s.doc().unwrap().is_source_missing("Sheet1", CellRef::parse("B2").unwrap()));
+    }
+
+    #[test]
+    fn set_missing_refuses_an_oversized_list() {
+        let mut s = s();
+        let entries: Vec<Json> = (0..=super::MAX_MISSING).map(|_| json!(0)).collect();
+        assert!(matches!(s.execute("source.setMissing", json!({"missing": entries})), Err(crate::EngineError::BadParams { .. })));
+    }
+
     #[test]
     fn source_commands_survive_bad_params() {
         let mut s = s();
-        for id in ["source.set", "source.get", "source.clear", "source.trace"] {
+        for id in ["source.set", "source.get", "source.clear", "source.trace", "source.list", "source.setMissing"] {
             for params in [
                 json!({}),
                 json!([1, 2]),
@@ -224,6 +447,9 @@ mod tests {
                 json!({"range": "A1", "links": "x"}),
                 json!({"range": "A1:XFD1048576", "links": []}),
                 json!({"cell": "Nope!A1"}),
+                json!({"missing": [{"sheet": 3, "cell": 4}, {"sheet": "Sheet1", "cell": "ZZZ999999999"}, null]}),
+                json!({"missing": null}),
+                json!({"range": "A1", "links": [[{"file": "f", "locator": "l", "hash": "x", "size": -3}]]}),
             ] {
                 let r = s.execute(id, params.clone());
                 assert!(!matches!(r, Err(crate::EngineError::Internal(..))), "{id} {params}: {r:?}");

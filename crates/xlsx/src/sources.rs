@@ -5,7 +5,8 @@
 //! The part is `customXml/itemN.xml` (the first `N` no other part uses), related from the workbook
 //! by a `customXml` relationship, with an `itemPropsN.xml` naming its schema:
 //! `<sources xmlns="urn:socratics:sources:1"><sheet name="Sheet1"><link ref="B2" file="…"
-//! locator="…" storeRow="…"/></sheet></sources>`. Characters XML can't carry are written as
+//! locator="…" storeRow="…" hash="…" size="…"/></sheet></sources>` (`hash` and `size`, the
+//! document's fingerprint, only when the link has them). Characters XML can't carry are written as
 //! Excel's `_xHHHH_` escapes, so every link reopens exactly. Reading takes it into the model, and the
 //! pass-through of unmodelled custom XML (`passthrough.rs`) leaves it out, so a save writes it
 //! once, afresh.
@@ -43,14 +44,16 @@ pub fn write(wb: &Workbook, out: &mut Out, wb_rels: &mut Rels) {
         let name: String = sh.name.chars().take(31).collect();
         let _ = write!(x, "<sheet name=\"{}\">", esc_attr(&name));
         for (c, l) in &sh.sources {
-            let _ = write!(
-                x,
-                "<link ref=\"{}\" file=\"{}\" locator=\"{}\" storeRow=\"{}\"/>",
-                c.a1(),
-                attr(&l.file),
-                attr(&l.locator),
-                attr(&l.store_row)
-            );
+            let _ =
+                write!(x, "<link ref=\"{}\" file=\"{}\" locator=\"{}\" storeRow=\"{}\"", c.a1(), attr(&l.file), attr(&l.locator), attr(&l.store_row));
+            // A well-formed hash is plain hex: nothing to escape. Anything else isn't written.
+            if let Some(h) = l.hash.as_deref().filter(|h| SourceLink::is_hash(h)) {
+                let _ = write!(x, " hash=\"{h}\"");
+            }
+            if let Some(n) = l.size {
+                let _ = write!(x, " size=\"{n}\"");
+            }
+            x.push_str("/>");
         }
         x.push_str("</sheet>");
     }
@@ -135,7 +138,10 @@ pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
                     continue;
                 }
                 let store_row = l.attr("storeRow").map(decode_xstring).unwrap_or_default();
-                sheet.sources.insert(cell, SourceLink { file, locator, store_row });
+                // A malformed fingerprint is dropped; the link stays.
+                let hash = l.attr("hash").filter(|h| SourceLink::is_hash(h)).map(str::to_string);
+                let size = l.attr("size").and_then(|n| n.parse::<u64>().ok());
+                sheet.sources.insert(cell, SourceLink { file, locator, store_row, hash, size });
                 count += 1;
             }
         }
@@ -157,6 +163,7 @@ mod tests {
             file: "Data Room/2nd Tier Requests/Cash/Heritage_Trust_Bank_Statement_September_2019.pdf".into(),
             locator: locator.into(),
             store_row: format!("Heritage__statement!{locator}"),
+            ..Default::default()
         }
     }
 
@@ -183,7 +190,12 @@ mod tests {
         s0.sources.insert(CellRef::new(1, 1), link("ACCOUNT SUMMARY / Beginning Balance"));
         s0.sources.insert(
             CellRef::new(2, 1),
-            SourceLink { file: "Data Room/a & b <c>.xlsx".into(), locator: "GL Detail!C16102".into(), store_row: "x\"y".into() },
+            SourceLink {
+                file: "Data Room/a & b <c>.xlsx".into(),
+                locator: "GL Detail!C16102".into(),
+                store_row: "x\"y".into(),
+                ..Default::default()
+            },
         );
         wb.sheet_mut(1).unwrap().sources.insert(CellRef::new(0, 0), link("Other"));
         let bytes = write_xlsx(&wb).unwrap();
@@ -204,16 +216,31 @@ mod tests {
         let s0 = wb.sheet_mut(0).unwrap();
         s0.sources.insert(
             CellRef::new(0, 0),
-            SourceLink { file: "Data Room/f.pdf".into(), locator: "Page 2\u{0C}Beginning Balance".into(), store_row: "S!A1".into() },
+            SourceLink {
+                file: "Data Room/f.pdf".into(),
+                locator: "Page 2\u{0C}Beginning Balance".into(),
+                store_row: "S!A1".into(),
+                ..Default::default()
+            },
         );
         s0.sources.insert(
             CellRef::new(1, 0),
-            SourceLink { file: "Data Room/a\u{01}b.pdf".into(), locator: "x\u{01}y\u{0B}z\u{7F}".into(), store_row: "r\u{1F}\u{FFFE}".into() },
+            SourceLink {
+                file: "Data Room/a\u{01}b.pdf".into(),
+                locator: "x\u{01}y\u{0B}z\u{7F}".into(),
+                store_row: "r\u{1F}\u{FFFE}".into(),
+                ..Default::default()
+            },
         );
         // Text that already looks like Excel's `_xHHHH_` escape stays literal.
         s0.sources.insert(
             CellRef::new(2, 0),
-            SourceLink { file: "Data Room/_x0041_.pdf".into(), locator: "_x005F_ and _x000C_".into(), store_row: String::new() },
+            SourceLink {
+                file: "Data Room/_x0041_.pdf".into(),
+                locator: "_x005F_ and _x000C_".into(),
+                store_row: String::new(),
+                ..Default::default()
+            },
         );
         let bytes = write_xlsx(&wb).unwrap();
         let (back, _) = read_xlsx(&bytes).unwrap();
@@ -255,7 +282,12 @@ mod tests {
         for i in 0..1_000u32 {
             s0.sources.insert(
                 CellRef::new(i, 0),
-                SourceLink { file: format!("Data Room/f{i}.pdf"), locator: format!("{i}:{long}"), store_row: format!("S!A{i}") },
+                SourceLink {
+                    file: format!("Data Room/f{i}.pdf"),
+                    locator: format!("{i}:{long}"),
+                    store_row: format!("S!A{i}"),
+                    ..Default::default()
+                },
             );
         }
         let bytes = write_xlsx(&wb).unwrap();
@@ -267,6 +299,43 @@ mod tests {
         assert_eq!(sources_parts(&again).len(), 1);
         let (third, _) = read_xlsx(&again).unwrap();
         assert_eq!(third.sheets[0].sources, wb.sheets[0].sources);
+    }
+
+    #[test]
+    fn fingerprints_survive_an_xlsx_round_trip_and_absent_ones_stay_absent() {
+        let hash = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+        let mut wb = Workbook::new();
+        let s0 = wb.sheet_mut(0).unwrap();
+        s0.sources.insert(CellRef::new(0, 0), SourceLink { hash: Some(hash.into()), size: Some(u64::MAX), ..link("with") });
+        s0.sources.insert(CellRef::new(1, 0), link("without"));
+        s0.sources.insert(CellRef::new(2, 0), SourceLink { size: Some(0), ..link("size only") });
+        let bytes = write_xlsx(&wb).unwrap();
+        let (back, report) = read_xlsx(&bytes).unwrap();
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+        assert_eq!(back.sheets[0].sources, wb.sheets[0].sources);
+        let without = back.sheets[0].sources.get(&CellRef::new(1, 0)).unwrap();
+        assert_eq!((without.hash.as_deref(), without.size), (None, None));
+        let (third, _) = read_xlsx(&write_xlsx(&back).unwrap()).unwrap();
+        assert_eq!(third.sheets[0].sources, wb.sheets[0].sources);
+    }
+
+    #[test]
+    fn malformed_fingerprints_in_a_file_are_dropped_and_the_links_kept() {
+        let rel = r#"<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/item1.xml"/>"#;
+        let good = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+        let part = format!(
+            r#"<?xml version="1.0"?><sources xmlns="urn:socratics:sources:1"><sheet name="Data"><link ref="A1" file="f" locator="upper" hash="{}" size="-4"/><link ref="A2" file="f" locator="short" hash="abc" size="1e3"/><link ref="A3" file="f" locator="ok" hash="{good}" size="42"/><link ref="A4" file="f" locator="huge" size="99999999999999999999999"/></sheet></sources>"#,
+            good.to_uppercase()
+        );
+        let (wb, _) = read_xlsx(&crate::tests::minimal("<sheetData/>", &[("customXml/item1.xml", &part)], rel, "")).unwrap();
+        let s = &wb.sheets[0];
+        assert_eq!(s.sources.len(), 4);
+        for r in [0, 1, 3] {
+            let l = s.sources.get(&CellRef::new(r, 0)).unwrap();
+            assert_eq!((l.hash.as_deref(), l.size), (None, None), "row {r}");
+        }
+        let ok = s.sources.get(&CellRef::new(2, 0)).unwrap();
+        assert_eq!((ok.hash.as_deref(), ok.size), (Some(good), Some(42)));
     }
 
     #[test]
