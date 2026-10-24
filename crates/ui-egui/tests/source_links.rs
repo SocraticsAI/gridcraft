@@ -1,7 +1,7 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
 //! The Source Inspector: markers on linked hard-coded numbers only (hovering one names the value's source;
 //! a click only selects), and for an active linked value a tint and a source square whose click
-//! tells the host. Formulas have none. The Sources toggle in the ribbon's tab row turns it all off.
+//! tells the host. Formulas have none. The Sources toggle in the sheet-tab bar turns it all off.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -227,41 +227,46 @@ fn the_inspector_is_on_by_default_toggles_and_persists() {
     assert!(h.state().ui.source_inspector);
 }
 
-/// Where the ribbon's tab row paints tab label `label`.
-fn tab_label(h: &Harness, label: &str) -> egui::Rect {
-    let ribbon_top = h.state().grid.rect.unwrap().top();
+/// Where the sheet-tab bar paints tab label `label` (below the grid).
+fn sheet_tab_label(h: &Harness, label: &str) -> egui::Rect {
+    let grid_bottom = h.state().grid.rect.unwrap().bottom();
     h.output()
         .shapes
         .iter()
         .find_map(|s| match &s.shape {
-            egui::Shape::Text(t) if t.galley.text() == label && t.pos.y < ribbon_top => Some(t.visual_bounding_rect()),
+            egui::Shape::Text(t) if t.galley.text() == label && t.pos.y > grid_bottom => Some(t.visual_bounding_rect()),
             _ => None,
         })
-        .unwrap_or_else(|| panic!("no {label} tab"))
-}
-
-/// The tab row's Sources toggle sits right after `last` (the last standard tab), level with it.
-fn assert_sources_after(h: &Harness, last: &str) {
-    let toggle = h.get_by_label("Sources").rect();
-    let tab = tab_label(h, last);
-    assert!(toggle.left() > tab.right() && toggle.left() < tab.right() + 24.0, "right after {last}: {toggle:?} {tab:?}");
-    assert!((toggle.center().y - tab.center().y).abs() < 3.0, "in the tab row: {toggle:?} {tab:?}");
+        .unwrap_or_else(|| panic!("no {label} sheet tab"))
 }
 
 #[test]
-fn the_sources_toggle_sits_in_the_tab_row_after_the_last_tab() {
+fn the_sources_toggle_sits_in_the_sheet_tab_bar_after_new_sheet() {
+    for automate in [true, false] {
+        let mut h = harness(session(), Services::default());
+        h.state_mut().chrome = Chrome { automate, ..Chrome::default() };
+        h.run_steps(2);
+        let toggle = h.get_by_label("Sources").rect();
+        let grid = h.state().grid.rect.unwrap();
+        assert!(toggle.top() > grid.bottom(), "below the grid, in the sheet-tab bar: {toggle:?} {grid:?}");
+        let new_sheet = h.get_by_label("New sheet").rect();
+        assert!(toggle.left() > new_sheet.right(), "after New Sheet: {toggle:?} {new_sheet:?}");
+        assert!((toggle.center().y - new_sheet.center().y).abs() < 3.0, "level with the tabs: {toggle:?} {new_sheet:?}");
+        assert!(toggle.right() < grid.left() + grid.width() * 0.8, "the scrollbar keeps the rest of the bar: {toggle:?}");
+        let ribbon_top = grid.top();
+        assert!(
+            h.output().shapes.iter().all(|s| !matches!(&s.shape, egui::Shape::Text(t) if t.pos.y < ribbon_top && t.galley.text() == "Sources")),
+            "no Sources in the ribbon"
+        );
+    }
+}
+
+#[test]
+fn new_sheet_follows_the_last_tab() {
     let h = harness(session(), Services::default());
-    assert_sources_after(&h, "Automate");
-    let mut h = harness(session(), Services::default());
-    h.state_mut().chrome = Chrome { automate: false, ..Chrome::default() };
-    h.run_steps(2);
-    assert_sources_after(&h, "View");
-    // A contextual tab (Table Design) comes after the toggle, which stays put.
-    h.state_mut().run("insert.table", json!({"range": "F1:G3"})).unwrap();
-    h.state_mut().run("selection.set", json!({"range": "F2"})).unwrap();
-    h.run_steps(2);
-    assert_sources_after(&h, "View");
-    assert!(tab_label(&h, "Table Design").left() > h.get_by_label("Sources").rect().right());
+    let new_sheet = h.get_by_label("New sheet").rect();
+    let last = sheet_tab_label(&h, "Sheet1");
+    assert!(new_sheet.left() > last.right() && new_sheet.left() < last.right() + 40.0, "right after the last tab: {new_sheet:?} {last:?}");
 }
 
 #[test]
@@ -275,7 +280,8 @@ fn the_sources_toggle_flips_the_inspector_without_touching_the_tabs() {
     assert_eq!(h.state().ui.ribbon_tab, "Data", "the active tab stays");
     assert!(!h.state().ui.ribbon_collapsed, "the ribbon stays open");
     assert!(h.state().session.journal.iter().all(|(id, _)| id != "view.sourceInspector"), "a UI preference, not a workbook edit");
-    // The tab row stays when the ribbon is collapsed, and the toggle with it.
+    assert_eq!(h.state().session.doc().unwrap().wb.sheets.len(), 1, "no sheet added");
+    // A collapsed ribbon leaves the toggle where it is.
     h.state_mut().ui.ribbon_collapsed = true;
     h.run_steps(2);
     h.get_by_label("Sources").click();
@@ -289,46 +295,58 @@ fn shapes_in(h: &Harness, rect: egui::Rect) -> Vec<egui::Shape> {
     h.output().shapes.iter().filter(|c| rect.contains_rect(c.shape.visual_bounding_rect())).map(|c| c.shape.clone()).collect()
 }
 
-/// Whether any stroke or fill of `shapes` is `color`.
-fn uses_color(shapes: &[egui::Shape], color: egui::Color32) -> bool {
-    shapes.iter().any(|s| match s {
-        egui::Shape::Path(p) => p.fill == color || p.stroke.color == egui::epaint::ColorMode::Solid(color),
-        egui::Shape::Rect(r) => r.fill == color || r.stroke.color == color,
-        egui::Shape::Circle(c) => c.fill == color || c.stroke.color == color,
-        _ => false,
-    })
+/// The small switch's pill track among `shapes`: a filled rect 16 px high.
+fn track(shapes: &[egui::Shape]) -> egui::epaint::RectShape {
+    shapes
+        .iter()
+        .find_map(|s| match s {
+            egui::Shape::Rect(r) if r.fill != egui::Color32::TRANSPARENT && (r.rect.height() - 16.0).abs() < 0.5 => Some(r.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no track: {shapes:?}"))
+}
+
+/// The thumb's centre among `shapes`: the switch-thumb-coloured circle.
+fn thumb(shapes: &[egui::Shape], t: &Tokens) -> egui::Pos2 {
+    shapes
+        .iter()
+        .find_map(|s| match s {
+            egui::Shape::Circle(c) if c.fill == t.switch_thumb => Some(c.center),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no thumb: {shapes:?}"))
 }
 
 #[test]
-fn the_sources_toggle_looks_like_a_tab_label_with_its_icon_showing_the_state() {
+fn the_sources_toggle_is_a_small_switch_showing_its_state() {
     let mut h = harness(session(), Services::default());
     let t = Tokens::light();
     let rect = h.get_by_label("Sources").rect();
+    // Away from the switch, so it is drawn at rest.
+    h.input_mut().events.push(Event::PointerMoved(Pos2::new(5.0, 5.0)));
+    h.run_steps(2);
     let on = shapes_in(&h, rect);
-    assert!(
-        on.iter().all(|s| !matches!(s, egui::Shape::Rect(r) if r.fill != egui::Color32::TRANSPARENT && r.rect.height() > 4.0)),
-        "no filled pill: {on:?}"
-    );
-    assert!(uses_color(&on, t.sourced_mark), "the icon is in the marker blue while on");
-    assert!(!uses_color(&on, t.accent), "no underline: that marks the active tab");
+    let pill = track(&on);
+    assert_eq!(pill.rect.size(), egui::vec2(32.0, 16.0));
+    assert_eq!(pill.fill, t.switch_on);
+    assert!(thumb(&on, &t).x > pill.rect.center().x, "the thumb sits right while on");
     let label = on.iter().find_map(|s| match s {
-        egui::Shape::Text(x) if x.galley.text() == "Sources" => Some(x.clone()),
+        egui::Shape::Text(x) if x.galley.text() == "Sources" => Some(x.visual_bounding_rect()),
         _ => None,
     });
-    let label = label.expect("the label");
-    let tab = h.output().shapes.iter().find_map(|c| match &c.shape {
-        egui::Shape::Text(x) if x.galley.text() == "Insert" && (x.visual_bounding_rect().center().y - rect.center().y).abs() < 3.0 => Some(x.clone()),
+    assert!(label.expect("the label").right() < pill.rect.left(), "the label comes before the switch");
+    let label_color = on.iter().find_map(|s| match s {
+        egui::Shape::Text(x) if x.galley.text() == "Sources" => Some(x.galley.job.sections[0].format.color),
         _ => None,
     });
-    let tab = tab.expect("an inactive tab");
-    assert_eq!(label.galley.job.sections[0].format.font_id, tab.galley.job.sections[0].format.font_id, "the inactive tabs' font");
-    assert_eq!(label.galley.job.sections[0].format.color, t.text_dim);
+    assert_eq!(label_color, Some(t.text), "the sheet tabs' text colour");
     h.get_by_label("Sources").click();
     h.run_steps(2);
+    h.input_mut().events.push(Event::PointerMoved(Pos2::new(5.0, 5.0)));
+    h.run_steps(2);
     let off = shapes_in(&h, rect);
-    assert!(!uses_color(&off, t.sourced_mark), "a dim icon while off");
-    assert!(uses_color(&off, t.text_dim));
-    assert!(!uses_color(&off, t.accent));
+    assert_eq!(track(&off).fill, t.switch_off);
+    assert!(thumb(&off, &t).x < pill.rect.center().x, "the thumb sits left while off");
 }
 
 #[test]
@@ -384,7 +402,7 @@ fn an_unlinked_number_shows_nothing_even_beside_links() {
     let (mut h, clicks) = with_clicks();
     let t = Tokens::light();
     let b3 = marker(&h, "B3").min;
-    assert!(!triangles(&h, t.sourced_mark).contains(&b3) && triangles(&h, OLD_AMBER).is_empty(), "no marker on B3");
+    assert!(!marks(&h, t.sourced_mark).contains(&b3) && marks(&h, OLD_AMBER).is_empty(), "no marker on B3");
     select(&mut h, "B3");
     assert_eq!(square(&h), None, "no square");
     for fill in [t.source_selected_fill, OLD_ORANGE] {
@@ -496,7 +514,7 @@ fn turning_the_inspector_off_hides_markers_tint_square_and_tips() {
     h.run_steps(2);
     assert_eq!(square(&h), None);
     for color in [t.sourced_mark, OLD_AMBER] {
-        assert!(triangles(&h, color).is_empty(), "no markers");
+        assert!(marks(&h, color).is_empty(), "no markers");
     }
     assert!(rects(&h, t.source_selected_fill).is_empty() && outlined(&h, t.source_square_fill).is_empty(), "no tint, no square");
     let at = marker_center(&h, "D2");
@@ -557,13 +575,13 @@ fn the_square_of_a_frozen_cell_crosses_into_the_scrolled_columns_but_not_the_hea
     assert!(square(&h).is_none_or(|s| s.visible().left() >= geo.cells.left() + geo.frozen_w), "never over the frozen columns");
 }
 
-/// The top-left corners of the painted triangles of colour `color`.
-fn triangles(h: &Harness, color: egui::Color32) -> Vec<Pos2> {
+/// The top-left corners of the painted marker squares of colour `color`.
+fn marks(h: &Harness, color: egui::Color32) -> Vec<Pos2> {
     h.output()
         .shapes
         .iter()
         .filter_map(|s| match &s.shape {
-            egui::Shape::Path(path) if path.fill == color && path.points.len() == 3 => path.points.first().copied(),
+            egui::Shape::Rect(r) if r.fill == color && (r.rect.width() - r.rect.height()).abs() < 0.01 && r.rect.width() < 8.0 => Some(r.rect.min),
             _ => None,
         })
         .collect()
@@ -573,15 +591,15 @@ fn triangles(h: &Harness, color: egui::Color32) -> Vec<Pos2> {
 fn markers_are_painted_in_the_top_left_corner_in_normal_view_only() {
     let mut h = harness(session(), Services::default());
     let t = Tokens::light();
-    let blue = triangles(&h, t.sourced_mark);
+    let blue = marks(&h, t.sourced_mark);
     for cell in ["B2", "D2"] {
         assert!(blue.contains(&marker(&h, cell).min), "{cell} has a sourced marker: {blue:?}");
     }
-    assert!(triangles(&h, OLD_AMBER).is_empty(), "the unlinked number B3 has no marker");
+    assert!(marks(&h, OLD_AMBER).is_empty(), "the unlinked number B3 has no marker");
     assert_eq!(blue.len(), 2, "formulas (C2:C5) have no marker: {blue:?}");
     h.state_mut().run("view.pageLayout", json!({})).unwrap();
     h.run_steps(4);
-    assert!(triangles(&h, t.sourced_mark).is_empty(), "no markers in Page Layout view");
+    assert!(marks(&h, t.sourced_mark).is_empty(), "no markers in Page Layout view");
 }
 
 #[test]
@@ -644,7 +662,7 @@ fn first_frame_after_an_edit_on_a_large_model() {
     }
     h.step();
     let bottom = edit(&mut h, 3);
-    let marks = triangles(&h, Tokens::light().sourced_mark).len();
+    let marks = marks(&h, Tokens::light().sourced_mark).len();
     assert!(marks > 0 && h.state().view().scroll.y > 0.0);
     println!(
         "idle frame {idle:?}; first frame after an edit: top {top:?} (again {top_again:?}), bottom of the running total {bottom:?}; {marks} blue markers in view"
@@ -660,7 +678,7 @@ fn a_linked_label_beside_a_linked_figure_shows_nothing() {
     let t = Tokens::light();
     let wb = &h.state().session.active().unwrap().wb;
     assert_eq!(source_marks::tip(wb, 0, CellRef::parse("A2").unwrap()), None, "no tooltip for a label");
-    let blue = triangles(&h, t.sourced_mark);
+    let blue = marks(&h, t.sourced_mark);
     assert!(blue.contains(&marker(&h, "B2").min), "the figure beside it is blue");
     assert!(!blue.contains(&marker(&h, "A2").min), "the label has no marker");
     let at = marker_center(&h, "A2");

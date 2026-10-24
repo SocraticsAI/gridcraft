@@ -29,7 +29,7 @@ carries a notice on its first line.
    saved in the `.xlsx` as a custom XML part (namespace `urn:socratics:sources:1`) and read back. New
    commands `source.set`, `source.get`, `source.clear` and `source.trace` (a formula traced through its
    references, across sheets, 3-D references, names and tables, to linked values, listing the
-   unlinked numbers it rests on). Only linked hard-coded numbers carry a marker, a blue triangle in
+   unlinked numbers it rests on). Only linked hard-coded numbers carry a marker, a small blue square in
    their top-left corner with a tooltip naming the source; unlinked numbers, linked text or logicals (labels, headers) and formulas (and spilled values, which
    `source.trace` still traces) show nothing. The markers are indicators only (a click on one
    just selects the cell). When the active cell (only the active cell, even in a range) holds a linked
@@ -37,18 +37,18 @@ carries a notice on its first line.
    when that would be wholly off the pane; past a list-validation arrow; under the fill handle, which
    wins). Hovering the square names the source; clicking it raises `UiRequest::SourceClick` for the
    active cell, which goes to the host's `Services::source_click`, and leaves the selection as it is.
-   A Sources toggle in the ribbon's tab row, right after the last tab shown (View when the host hides
-   Automate) and before any contextual tab, runs the UI command `view.sourceInspector` (`{on?: bool}`,
-   on by default and saved with the other UI preferences in `UiState`); it is a button, not a tab, stays
-   in the tab row when the ribbon is collapsed, and turns markers, tint, square and tooltips off; the
-   links stay in the model. It is drawn like an inactive tab label, its icon blue while on.
-   Normal view only. The ribbon also gains Clear Sources, and the marker, tint and square colours are
-   theme tokens. Files: `crates/model`
+   A Sources toggle in the sheet-tab bar, at the start of the horizontal scrollbar's share, runs the UI
+   command `view.sourceInspector` (`{on?: bool}`, on by default and saved with the other UI preferences in
+   `UiState`) and turns markers, tint, square and tooltips off; the links stay in the model. It is a
+   small labelled switch (a 32×16 pill with a white thumb, Socratics' small toggle), dropping its label
+   when the bar is too short to keep the scrollbar usable. The tab viewport is sized to its tabs, so New
+   Sheet follows the last tab; New Sheet is named for assistive tech. Normal view only. The ribbon also
+   gains Clear Sources, and the marker, tint, square and switch colours are theme tokens. Files: `crates/model`
    (`src/{cellmap,features,sheet,store}.rs`), `crates/engine` (`src/lib.rs`, the new `src/source_state.rs`,
    `src/cmd/{data,edit,format,formulas,insert,mod,sheet}.rs`, the new `src/cmd/source.rs`,
    `tests/command_sequence_fuzz.rs`), `crates/xlsx` (`src/{lib,passthrough,read,write}.rs`, the new
    `src/sources.rs`, `src/tests/passthrough_tests.rs`) and `crates/ui-egui`
-   (`src/{control,grid,icons,lib,ribbon,theme}.rs`, the new `src/source_marks.rs` and
+   (`src/{control,grid,icons,lib,ribbon,tabs,theme,widgets}.rs`, the new `src/source_marks.rs` and
    `tests/source_links.rs`). Not proposed upstream.
 
 An earlier change, the host chrome switch, was merged upstream as

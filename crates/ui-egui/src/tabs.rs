@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: the Sources toggle at the end of the tab share, the New Sheet button right after the last tab. See MODIFICATIONS.md.
 //! Sheet tabs and the status bar.
 
 use std::sync::Arc;
@@ -35,6 +36,12 @@ fn activate_sheet(app: &mut SheetApp, i: usize) {
     }
 }
 
+/// The New Sheet button after the last tab (its gap and its width), and the room around the Sources toggle.
+const NEW_SHEET_WIDTH: f32 = 6.0 + 26.0;
+const SOURCES_MARGIN: f32 = 16.0;
+/// The narrowest the grid's horizontal scrollbar gets for the Sources label's sake.
+const MIN_SCROLLBAR: f32 = 120.0;
+
 pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::bottom("sheet_tabs").exact_size(32.0).frame(egui::Frame::NONE.fill(t.tab_bar)).show(ui, |ui| {
@@ -60,6 +67,7 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                 activate_sheet(app, i);
             }
             ui.add_space(8.0);
+            let section_start = ui.cursor().left();
             let Some(d) = app.session.active() else { return };
             let sheets: Vec<(usize, String, Option<[u8; 3]>, bool)> =
                 d.wb.sheets
@@ -69,8 +77,18 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                     .map(|(i, s)| (i, s.name.clone(), s.tab_color.and_then(|c| c.resolve(&d.wb.theme)), i == d.wb.active_sheet))
                     .collect();
             // Keep worksheet tabs in their own horizontally scrollable viewport. As in Excel, the
-            // tabs get 60% of the bar and the grid's horizontal scrollbar the rest.
-            let tabs_width = (ui.available_width() * 0.6).max(100.0);
+            // tabs get 60% of the bar and the grid's horizontal scrollbar the rest. The New Sheet button
+            // follows the last tab; the Sources toggle starts the scrollbar's share.
+            let section = (ui.available_width() * 0.6).max(100.0);
+            let sources_label = app.ui.language.tr("Sources");
+            let tabs_content: f32 = sheets
+                .iter()
+                .map(|(_, name, _, active)| {
+                    let font = if *active { theme::ui_bold(13.0) } else { theme::ui_font(13.0) };
+                    (ui.painter().layout_no_wrap(name.clone(), font, t.text).size().x + 32.0).max(72.0)
+                })
+                .sum();
+            let tabs_width = tabs_content.min((section - NEW_SHEET_WIDTH).max(100.0));
             // Reveal the selected sheet after navigation or layout changes, but
             // allow browsing other tabs without snapping back on every frame.
             let reveal_key = egui::Id::new((d.uid, d.wb.active_sheet, &sheets, tabs_width.to_bits()));
@@ -212,9 +230,21 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                     });
             });
             ui.add_space(6.0);
-            if crate::widgets::icon_button(ui, Icon::Plus, t.text_dim, "New sheet (⇧F11)", vec2(26.0, 26.0)).clicked() {
+            let new_sheet = crate::widgets::icon_button(ui, Icon::Plus, t.text_dim, "New sheet (⇧F11)", vec2(26.0, 26.0));
+            new_sheet.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "New sheet"));
+            if new_sheet.clicked() {
                 app.run_or_alert("home.insertSheet", json!({}));
             }
+            let sources_left = (section_start + section).max(ui.cursor().left()) + SOURCES_MARGIN / 2.0;
+            ui.add_space(sources_left - ui.cursor().left());
+            // The scrollbar keeps a usable width: a short bar shows the switch without its label.
+            let room = ui.available_width() - SOURCES_MARGIN / 2.0 - MIN_SCROLLBAR;
+            let show_label = crate::widgets::small_switch_width(ui, sources_label, true) <= room;
+            let on = app.ui.source_inspector;
+            if crate::widgets::small_switch(ui, on, sources_label, "Source Inspector: show cell sources", show_label).clicked() {
+                app.run_or_alert("view.sourceInspector", json!({}));
+            }
+            ui.add_space(SOURCES_MARGIN / 2.0);
             // The track ends where the grid does, so it stops under the vertical scrollbar.
             let avail = ui.available_rect_before_wrap();
             let right = app.grid.rect.map_or(avail.right(), |r| r.right()).min(avail.right());

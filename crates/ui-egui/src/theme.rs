@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: cell source marker, selection tint and source square colours. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: cell source marker, selection tint, source square and small switch colours. See MODIFICATIONS.md.
 //! Design tokens and fonts.
 //!
 //! Colours are our own, tuned to read like a modern desktop spreadsheet. Fonts come from the
@@ -60,6 +60,13 @@ pub struct Tokens {
     pub source_square_fill: Color32,
     pub source_square_hover: Color32,
     pub source_square_ink: Color32,
+    /// The small on/off switch (the sheet-tab bar's Sources toggle): its track on and off, each
+    /// under the pointer, and its thumb.
+    pub switch_on: Color32,
+    pub switch_on_hover: Color32,
+    pub switch_off: Color32,
+    pub switch_off_hover: Color32,
+    pub switch_thumb: Color32,
 }
 
 impl Tokens {
@@ -102,11 +109,17 @@ impl Tokens {
             notice_warn_border: Color32::from_rgb(0xF0, 0xC3, 0x6E),
             notice_info_bg: Color32::from_rgb(0xEA, 0xF2, 0xFB),
             notice_info_border: Color32::from_rgb(0xB9, 0xD2, 0xEC),
-            sourced_mark: Color32::from_rgb(0x1F, 0x6F, 0xD1),
+            sourced_mark: Color32::from_rgb(0x27, 0x4E, 0x8F),
             source_selected_fill: Color32::from_rgb(0xE6, 0xEE, 0xFA),
             source_square_fill: Color32::from_rgb(0xE6, 0xEE, 0xFA),
             source_square_hover: Color32::from_rgb(0xAF, 0xC7, 0xEC),
             source_square_ink: Color32::from_rgb(0x1B, 0x3A, 0x66),
+            // Socratics' small toggle: a slate track while on, a light grey one while off.
+            switch_on: Color32::from_rgb(0x2E, 0x34, 0x3E),
+            switch_on_hover: Color32::from_rgb(0x1C, 0x20, 0x26),
+            switch_off: Color32::from_rgb(0xE5, 0xE5, 0xE5),
+            switch_off_hover: Color32::from_rgb(0xD4, 0xD4, 0xD4),
+            switch_thumb: Color32::WHITE,
         }
     }
 
@@ -152,11 +165,17 @@ impl Tokens {
             // Cells stay white with black text in the dark theme (`grid_bg`, `cell_text`), so the
             // marks, the selection tint and the source square keep their light colours: a dark blue
             // would hide the cell's black text.
-            sourced_mark: Color32::from_rgb(0x1F, 0x6F, 0xD1),
+            sourced_mark: Color32::from_rgb(0x27, 0x4E, 0x8F),
             source_selected_fill: Color32::from_rgb(0xE6, 0xEE, 0xFA),
             source_square_fill: Color32::from_rgb(0xE6, 0xEE, 0xFA),
             source_square_hover: Color32::from_rgb(0xAF, 0xC7, 0xEC),
             source_square_ink: Color32::from_rgb(0x1B, 0x3A, 0x66),
+            // On the dark bar the slate track would vanish: a lighter slate while on, a mid grey while off.
+            switch_on: Color32::from_rgb(0x7A, 0x82, 0x8D),
+            switch_on_hover: Color32::from_rgb(0x8D, 0x95, 0xA0),
+            switch_off: Color32::from_rgb(0x50, 0x50, 0x50),
+            switch_off_hover: Color32::from_rgb(0x5E, 0x5E, 0x5E),
+            switch_thumb: Color32::WHITE,
         }
     }
 

@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch, Clear Sources and the Sources toggle in the tab row. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch, and Clear Sources. See MODIFICATIONS.md.
 //! Title bar (Quick Access Toolbar), ribbon tabs and ribbon groups, and keyboard shortcuts.
 
 use egui::{Align2, Color32, Key, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
@@ -182,8 +182,6 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                     }
                     let mut tabs: Vec<&str> = TABS.iter().copied().filter(|tab| app.chrome.automate || *tab != "Automate").collect();
                     let ctx_tabs = contextual_tabs(app);
-                    // The Sources toggle follows the last standard tab, before any contextual tab.
-                    let sources_after = tabs.last().copied();
                     tabs.extend(ctx_tabs.iter());
                     for tab in tabs {
                         let active = app.ui.ribbon_tab == tab;
@@ -223,9 +221,6 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                         {
                             keytip(app, ui, sequence, pos2(r.center().x, r.bottom() - 1.0));
                         }
-                        if Some(tab) == sources_after {
-                            sources_toggle(app, ui);
-                        }
                     }
                 });
             });
@@ -260,31 +255,6 @@ pub fn show(app: &mut SheetApp, ui: &mut Ui) {
                 });
             });
         });
-}
-
-/// The Source Inspector toggle in the tab row (`view.sourceInspector`): a button, not a tab, so a
-/// click neither switches tabs nor collapses the ribbon. Styled as an inactive tab label; while on,
-/// its icon is in the marker blue (no underline: that marks the active tab).
-fn sources_toggle(app: &mut SheetApp, ui: &mut Ui) {
-    let t = Tokens::get(ui.ctx());
-    let lang = app.ui.language;
-    let on = app.ui.source_inspector;
-    let label = lang.tr("Sources");
-    let text = ui.painter().layout_no_wrap(label.to_string(), theme::ui_font(13.5), t.text_dim);
-    let (icon, gap) = (16.0, 5.0);
-    let content_w = icon + gap + text.size().x;
-    let (r, resp) = ui.allocate_exact_size(vec2(content_w + 22.0, 30.0), Sense::click());
-    if resp.hovered() {
-        ui.painter().rect_filled(r.shrink2(vec2(2.0, 4.0)), 5.0, t.hover);
-    }
-    let left = r.center().x - content_w / 2.0;
-    let icon_color = if on { t.sourced_mark } else { t.text_dim };
-    icons::paint(ui.painter(), Rect::from_center_size(pos2(left + icon / 2.0, r.center().y), vec2(icon, icon)), Icon::SourceInspect, icon_color);
-    ui.painter().galley(pos2(left + icon + gap, r.center().y - text.size().y / 2.0), text, t.text_dim);
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label));
-    if resp.on_hover_text(lang.tr("Source Inspector: show cell sources")).clicked() {
-        act(app, "view.sourceInspector", json!({}));
-    }
 }
 
 /// The File tab opens the Backstage view (New, Open, Info, Save As, Print, Export, Options…), like

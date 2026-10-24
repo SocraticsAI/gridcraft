@@ -1,6 +1,6 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
-//! The Source Inspector (the Sources toggle in the ribbon's tab row, on by default): a cell source
-//! marker, a small triangle (`Tokens::sourced_mark`) in the top-left corner of a hard-coded number
+//! The Source Inspector (the Sources toggle in the sheet-tab bar, on by default): a cell source
+//! marker, a tiny square (`Tokens::sourced_mark`) in the top-left corner of a hard-coded number
 //! that has a source link, with a tooltip naming the source; and for an active cell holding a
 //! linked number, a tint over the cell (`Tokens::source_selected_fill`) and a source square beside
 //! it whose click goes to the host. Unlinked numbers, text and formulas show nothing. Normal view
@@ -18,7 +18,7 @@ use crate::grid::Geo;
 use crate::icons::{self, Icon};
 use crate::theme::Tokens;
 
-/// Side of the painted triangle at zoom `z` (the size of the note indicator).
+/// Side of the painted square at zoom `z` (the size of the note indicator).
 pub fn marker_size(z: f32) -> f32 {
     6.0 * z.max(0.7)
 }
@@ -59,11 +59,7 @@ pub fn paint_quadrant(d: &DocState, p: &Painter, geo: &Geo, si: usize, sh: &Shee
             continue;
         }
         let Some(r) = cell_area(geo, sh, c) else { continue };
-        p.add(egui::Shape::convex_polygon(
-            vec![r.left_top(), pos2(r.left() + s, r.top()), pos2(r.left(), r.top() + s)],
-            t.sourced_mark,
-            Stroke::NONE,
-        ));
+        p.rect_filled(Rect::from_min_size(r.left_top(), vec2(s, s)), 0.0, t.sourced_mark);
     }
 }
 
