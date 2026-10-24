@@ -838,7 +838,7 @@ fn source_links_are_modelled_while_other_custom_xml_is_still_kept_once() {
     let ours = |u: &Unpacked| -> Vec<String> {
         u.parts
             .iter()
-            .filter(|(_, b)| String::from_utf8_lossy(b).contains("<sources xmlns=\"urn:socratics:sources:1\""))
+            .filter(|(_, b)| String::from_utf8_lossy(b).contains("<sources xmlns=\"urn:socratics:sources:2\""))
             .map(|(n, _)| n.clone())
             .collect()
     };

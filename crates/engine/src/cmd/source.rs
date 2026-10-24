@@ -318,6 +318,44 @@ mod tests {
     }
 
     #[test]
+    fn a_large_load_from_a_few_files_reopens_exactly_from_a_saved_xlsx() {
+        let mut s = s();
+        s.execute("home.insertSheet", json!({"name": "Q3 \"Café\" & <Co>"})).unwrap();
+        // 20,000 cells from one fingerprinted statement, half with a store row.
+        let rows: Vec<Json> = (0..2_000)
+            .map(|r| {
+                (0..10)
+                    .map(|c| {
+                        let i = r * 10 + c;
+                        let mut l = fingerprinted(&format!("Page {} / line {i}", i / 50));
+                        if i % 2 == 1 {
+                            l.as_object_mut().unwrap().remove("storeRow");
+                        }
+                        l
+                    })
+                    .collect()
+            })
+            .collect();
+        s.execute("source.set", json!({"sheet": "Sheet1", "range": "A1:J2000", "links": rows})).unwrap();
+        // A few more from other documents, with and without fingerprints.
+        let other = json!({"file": "Data Room/a & b <c> \"d\"/GL_x0041_.xlsx", "locator": "GL Detail!C16102 & <x>"});
+        s.execute("source.set", json!({"sheet": "Sheet1", "range": "L1:L2", "links": [[other.clone()], [link_json("plain")]]})).unwrap();
+        s.execute("source.set", json!({"sheet": "Q3 \"Café\" & <Co>", "range": "B2:C2", "links": [[other, fingerprinted("there")]]})).unwrap();
+        let wb = &s.doc().unwrap().wb;
+        assert_eq!(wb.sheet(0).unwrap().sources.len(), 20_002);
+        let bytes = crate::io::save_bytes(wb, "book.xlsx").unwrap();
+        let (back, _) = crate::io::open_bytes("book.xlsx", &bytes).unwrap();
+        for i in 0..wb.sheets.len() {
+            assert_eq!(back.sheet(i).unwrap().sources, wb.sheet(i).unwrap().sources, "sheet {i}");
+        }
+        let again = crate::io::save_bytes(&back, "book.xlsx").unwrap();
+        let (third, _) = crate::io::open_bytes("book.xlsx", &again).unwrap();
+        for i in 0..wb.sheets.len() {
+            assert_eq!(third.sheet(i).unwrap().sources, wb.sheet(i).unwrap().sources, "sheet {i}");
+        }
+    }
+
+    #[test]
     fn bad_fingerprints_are_refused_and_change_nothing() {
         let mut s = s();
         s.execute("source.set", json!({"range": "A1", "links": [[fingerprinted("kept")]]})).unwrap();

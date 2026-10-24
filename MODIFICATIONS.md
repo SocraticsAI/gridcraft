@@ -26,7 +26,10 @@ carries a notice on its first line.
    cells (inserting and deleting rows, columns and cells, Move Columns, Sort, Remove Duplicates,
    cut and paste, dragging a selection), copy and paste copies them, and typing, filling or
    replacing over a cell, clearing its contents and merging it into a neighbour drop its link. They are
-   saved in the `.xlsx` as a custom XML part (namespace `urn:socratics:sources:1`) and read back. New
+   saved in the `.xlsx` as a custom XML part (namespace `urn:socratics:sources:2`) and read back, grouped
+   by document so a load of many cells from one file names it once: per sheet, one `<file path hash size>`
+   per distinct document holding a `<link ref locator storeRow>` per cell (an unshipped flat version 1
+   part, one element per cell naming its file, isn't read and is kept as unmodelled custom XML). New
    commands `source.set`, `source.get`, `source.clear` and `source.trace` (a formula traced through its
    references, across sheets, 3-D references, names and tables, to linked values, listing the
    unlinked numbers it rests on). Only linked hard-coded numbers carry a marker, a small blue square in
@@ -46,7 +49,7 @@ carries a notice on its first line.
    gains Clear Sources, and the marker, tint, square and switch colours are theme tokens. A link may also
    carry its document's fingerprint, `hash` (SHA-256, 64 lowercase hex digits) and `size` (bytes), so the
    host can find the document after it moves; `source.set` takes them (refusing malformed ones), and they
-   are saved in JSON and as `hash`/`size` attributes in the `.xlsx` part (a malformed one is dropped on
+   are saved in JSON and as `hash`/`size` attributes of the link's `<file>` in the `.xlsx` part (a malformed one is dropped on
    load, keeping the link). `source.list` returns every link in the workbook (sheet order, then row, then
    column). `source.setMissing` (`{missing: [{sheet, cell}]}`) replaces the document's set of cells whose
    source the host could not find: display state kept on the open document, never saved, journaled,
