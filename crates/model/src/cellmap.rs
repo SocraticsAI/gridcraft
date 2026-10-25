@@ -61,19 +61,21 @@ mod tests {
             SourceLink {
                 file: "Data Room/2nd Tier Requests/Cash/Heritage_Trust_Bank_Statement_September_2019.pdf".into(),
                 locator: "ACCOUNT SUMMARY / Beginning Balance".into(),
-                store_row: "Heritage_Trust_Bank_Statement_September_2019__statement!C12".into(),
                 ..Default::default()
             },
         );
         let json = serde_json::to_string(&s).expect("serialize");
         assert!(json.contains("\"B2\""), "keys are A1 text: {json}");
-        assert!(json.contains("\"storeRow\""), "fields are camelCase: {json}");
         assert!(!json.contains("\"hash\"") && !json.contains("\"size\""), "an unfingerprinted link writes neither: {json}");
         let back: Sheet = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.sources, s.sources);
         assert!(back.sources.values().all(|l| l.hash.is_none() && l.size.is_none()));
-        // JSON written before links existed still loads.
+        // A link written with an older field (`storeRow`) still loads, without it.
         let mut value = serde_json::to_value(&s).expect("to value");
+        value["sources"]["B2"]["storeRow"] = serde_json::json!("Heritage__statement!C12");
+        let legacy: Sheet = serde_json::from_value(value.clone()).expect("older link loads");
+        assert_eq!(legacy.sources, s.sources);
+        // JSON written before links existed still loads.
         value.as_object_mut().expect("object").remove("sources");
         let old: Sheet = serde_json::from_value(value).expect("older JSON loads");
         assert!(old.sources.is_empty());
@@ -83,13 +85,7 @@ mod tests {
     fn source_fingerprints_survive_json_and_bad_ones_are_dropped() {
         let hash = "0123456789abcdef".repeat(4);
         let mut s = Sheet::new("S");
-        let link = SourceLink {
-            file: "Data Room/a.pdf".into(),
-            locator: "p1".into(),
-            store_row: String::new(),
-            hash: Some(hash.clone()),
-            size: Some(1_234_567),
-        };
+        let link = SourceLink { file: "Data Room/a.pdf".into(), locator: "p1".into(), hash: Some(hash.clone()), size: Some(1_234_567) };
         s.sources.insert(CellRef::new(0, 0), link);
         let json = serde_json::to_string(&s).expect("serialize");
         assert!(json.contains(&format!("\"hash\":\"{hash}\"")) && json.contains("\"size\":1234567"), "{json}");

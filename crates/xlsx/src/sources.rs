@@ -6,12 +6,12 @@
 //! by a `customXml` relationship, with an `itemPropsN.xml` naming its schema. Links are grouped by
 //! their document, so a load of many cells from one file names the file once:
 //! `<sources xmlns="urn:socratics:sources:2"><sheet name="Sheet1"><file path="…" hash="…"
-//! size="…"><link ref="B2" locator="…" storeRow="…"/></file></sheet></sources>`: one `<file>` per
-//! distinct path, fingerprint (`hash`) and size in the sheet, `hash` and `size` only when the links
-//! have them, `storeRow` only when not empty. Characters XML can't carry are written as Excel's
-//! `_xHHHH_` escapes, so every link reopens exactly. Reading takes it into the model, and the
-//! pass-through of unmodelled custom XML (`passthrough.rs`) leaves it out, so a save writes it
-//! once, afresh.
+//! size="…"><link ref="B2" locator="…"/></file></sheet></sources>`: one `<file>` per distinct
+//! path, fingerprint (`hash`) and size in the sheet, `hash` and `size` only when the links have
+//! them. Characters XML can't carry are written as Excel's `_xHHHH_` escapes, so every link
+//! reopens exactly. Attributes this version doesn't know (an older link's `storeRow`) are ignored.
+//! Reading takes it into the model, and the pass-through of unmodelled custom XML
+//! (`passthrough.rs`) leaves it out, so a save writes it once, afresh.
 //!
 //! Version 1 of the namespace wrote one flat `<link file=… locator=…/>` per cell. It never shipped
 //! and isn't read: a version 1 part is unmodelled custom XML, kept as it is.
@@ -67,11 +67,7 @@ pub fn write(wb: &Workbook, out: &mut Out, wb_rels: &mut Rels) {
             }
             x.push('>');
             for (c, l) in links {
-                let _ = write!(x, "<link ref=\"{}\" locator=\"{}\"", c.a1(), attr(&l.locator));
-                if !l.store_row.is_empty() {
-                    let _ = write!(x, " storeRow=\"{}\"", attr(&l.store_row));
-                }
-                x.push_str("/>");
+                let _ = write!(x, "<link ref=\"{}\" locator=\"{}\"/>", c.a1(), attr(&l.locator));
             }
             x.push_str("</file>");
         }
@@ -160,8 +156,7 @@ pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
                     }
                     let Some(cell) = l.attr("ref").and_then(CellRef::parse).filter(CellRef::is_valid) else { continue };
                     let Some(locator) = l.attr("locator").map(decode_xstring).filter(|s| !s.trim().is_empty()) else { continue };
-                    let store_row = l.attr("storeRow").map(decode_xstring).unwrap_or_default();
-                    sheet.sources.insert(cell, SourceLink { file: file.clone(), locator, store_row, hash: hash.clone(), size });
+                    sheet.sources.insert(cell, SourceLink { file: file.clone(), locator, hash: hash.clone(), size });
                     count += 1;
                 }
             }
@@ -183,7 +178,6 @@ mod tests {
         SourceLink {
             file: "Data Room/2nd Tier Requests/Cash/Heritage_Trust_Bank_Statement_September_2019.pdf".into(),
             locator: locator.into(),
-            store_row: format!("Heritage__statement!{locator}"),
             ..Default::default()
         }
     }
@@ -223,12 +217,7 @@ mod tests {
         s0.sources.insert(CellRef::new(1, 1), link("ACCOUNT SUMMARY / Beginning Balance"));
         s0.sources.insert(
             CellRef::new(2, 1),
-            SourceLink {
-                file: "Data Room/a & b <c>.xlsx".into(),
-                locator: "GL Detail!C16102".into(),
-                store_row: "x\"y".into(),
-                ..Default::default()
-            },
+            SourceLink { file: "Data Room/a & b <c>.xlsx".into(), locator: "GL Detail!C16102 \"x\"".into(), ..Default::default() },
         );
         wb.sheet_mut(1).unwrap().sources.insert(CellRef::new(0, 0), link("Other"));
         let bytes = write_xlsx(&wb).unwrap();
@@ -249,31 +238,16 @@ mod tests {
         let s0 = wb.sheet_mut(0).unwrap();
         s0.sources.insert(
             CellRef::new(0, 0),
-            SourceLink {
-                file: "Data Room/f.pdf".into(),
-                locator: "Page 2\u{0C}Beginning Balance".into(),
-                store_row: "S!A1".into(),
-                ..Default::default()
-            },
+            SourceLink { file: "Data Room/f.pdf".into(), locator: "Page 2\u{0C}Beginning Balance".into(), ..Default::default() },
         );
         s0.sources.insert(
             CellRef::new(1, 0),
-            SourceLink {
-                file: "Data Room/a\u{01}b.pdf".into(),
-                locator: "x\u{01}y\u{0B}z\u{7F}".into(),
-                store_row: "r\u{1F}\u{FFFE}".into(),
-                ..Default::default()
-            },
+            SourceLink { file: "Data Room/a\u{01}b.pdf".into(), locator: "x\u{01}y\u{0B}z\u{7F}\u{1F}\u{FFFE}".into(), ..Default::default() },
         );
         // Text that already looks like Excel's `_xHHHH_` escape stays literal.
         s0.sources.insert(
             CellRef::new(2, 0),
-            SourceLink {
-                file: "Data Room/_x0041_.pdf".into(),
-                locator: "_x005F_ and _x000C_".into(),
-                store_row: String::new(),
-                ..Default::default()
-            },
+            SourceLink { file: "Data Room/_x0041_.pdf".into(), locator: "_x005F_ and _x000C_".into(), ..Default::default() },
         );
         let bytes = write_xlsx(&wb).unwrap();
         let (back, _) = read_xlsx(&bytes).unwrap();
@@ -313,15 +287,8 @@ mod tests {
         let s0 = wb.sheet_mut(0).unwrap();
         let long = "x".repeat(70_000);
         for i in 0..1_000u32 {
-            s0.sources.insert(
-                CellRef::new(i, 0),
-                SourceLink {
-                    file: format!("Data Room/f{i}.pdf"),
-                    locator: format!("{i}:{long}"),
-                    store_row: format!("S!A{i}"),
-                    ..Default::default()
-                },
-            );
+            s0.sources
+                .insert(CellRef::new(i, 0), SourceLink { file: format!("Data Room/f{i}.pdf"), locator: format!("{i}:{long}"), ..Default::default() });
         }
         let bytes = write_xlsx(&wb).unwrap();
         let (back, report) = read_xlsx(&bytes).unwrap();
@@ -372,6 +339,23 @@ mod tests {
     }
 
     #[test]
+    fn a_legacy_store_row_attribute_is_ignored_and_not_written_back() {
+        let rel = r#"<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/item1.xml"/>"#;
+        let part = r#"<?xml version="1.0"?><sources xmlns="urn:socratics:sources:2"><sheet name="Data"><file path="f.pdf"><link ref="A1" locator="l" storeRow="S!C12"/><link ref="A2" locator="m" storeRow=""/></file></sheet></sources>"#;
+        let (wb, report) = read_xlsx(&crate::tests::minimal("<sheetData/>", &[("customXml/item1.xml", part)], rel, "")).unwrap();
+        assert!(!report.warnings.iter().any(|w| w.contains("source")), "{:?}", report.warnings);
+        let s = &wb.sheets[0];
+        assert_eq!(s.sources.len(), 2);
+        assert_eq!(s.sources.get(&CellRef::new(0, 0)), Some(&SourceLink { file: "f.pdf".into(), locator: "l".into(), ..Default::default() }));
+        let saved = write_xlsx(&wb).unwrap();
+        let parts = sources_parts(&saved);
+        assert_eq!(parts.len(), 1);
+        assert!(!part_text(&saved, &parts[0]).contains("storeRow"));
+        let (back, _) = read_xlsx(&saved).unwrap();
+        assert_eq!(back.sheets[0].sources, s.sources);
+    }
+
+    #[test]
     fn a_workbook_without_links_writes_no_sources_part() {
         let bytes = write_xlsx(&Workbook::new()).unwrap();
         assert!(sources_parts(&bytes).is_empty());
@@ -385,7 +369,6 @@ mod tests {
         let s = &wb.sheets[0];
         assert_eq!(s.sources.len(), 1);
         assert_eq!(s.sources.get(&CellRef::new(3, 3)).map(|l| l.locator.as_str()), Some("kept"));
-        assert_eq!(s.sources.get(&CellRef::new(3, 3)).map(|l| l.store_row.as_str()), Some(""));
         let broken = "<sources xmlns=\"urn:socratics:sources:2\"><sheet";
         assert!(read_xlsx(&crate::tests::minimal("<sheetData/>", &[("customXml/item1.xml", broken)], rel, "")).is_ok());
     }
@@ -397,25 +380,24 @@ mod tests {
         wb.sheets.push(Arc::new(Sheet::new("Q3 \"Café\" & <Co>")));
         let a = "Data Room/a & b <c> \"d\".pdf";
         let b = "Data Room/Café/_x0041_\u{01}.xlsx";
-        let mk = |file: &str, locator: &str, store_row: &str, hash: Option<&str>, size: Option<u64>| SourceLink {
+        let mk = |file: &str, locator: &str, hash: Option<&str>, size: Option<u64>| SourceLink {
             file: file.into(),
             locator: locator.into(),
-            store_row: store_row.into(),
             hash: hash.map(str::to_string),
             size,
         };
         let s0 = wb.sheet_mut(0).unwrap();
-        s0.sources.insert(CellRef::new(0, 0), mk(a, "Page 1 / Total & \"net\"", "S!A1", Some(hash), Some(1234)));
-        s0.sources.insert(CellRef::new(1, 0), mk(a, "Page 2 <x>", "", Some(hash), Some(1234)));
+        s0.sources.insert(CellRef::new(0, 0), mk(a, "Page 1 / Total & \"net\"", Some(hash), Some(1234)));
+        s0.sources.insert(CellRef::new(1, 0), mk(a, "Page 2 <x>", Some(hash), Some(1234)));
         // Same path, no fingerprint: its own group.
-        s0.sources.insert(CellRef::new(2, 0), mk(a, "Page 3", "S!A3", None, None));
-        s0.sources.insert(CellRef::new(3, 0), mk(b, "GL Detail!C16102\u{0C}", "", None, Some(0)));
-        s0.sources.insert(CellRef::new(4, 0), mk(b, "GL Detail!C2", "r\u{1F}", None, Some(0)));
+        s0.sources.insert(CellRef::new(2, 0), mk(a, "Page 3", None, None));
+        s0.sources.insert(CellRef::new(3, 0), mk(b, "GL Detail!C16102\u{0C}", None, Some(0)));
+        s0.sources.insert(CellRef::new(4, 0), mk(b, "GL Detail!C2\u{1F}", None, Some(0)));
         // A malformed fingerprint isn't written: it groups with the unfingerprinted ones.
-        s0.sources.insert(CellRef::new(5, 0), mk(a, "Page 4", "", Some("ABC"), None));
+        s0.sources.insert(CellRef::new(5, 0), mk(a, "Page 4", Some("ABC"), None));
         let s1 = wb.sheet_mut(1).unwrap();
-        s1.sources.insert(CellRef::new(9, 3), mk(b, "x", "y", Some(hash), None));
-        s1.sources.insert(CellRef::new(0, 1), mk(a, "_x005F_", "", None, None));
+        s1.sources.insert(CellRef::new(9, 3), mk(b, "x", Some(hash), None));
+        s1.sources.insert(CellRef::new(0, 1), mk(a, "_x005F_", None, None));
         let bytes = write_xlsx(&wb).unwrap();
         let parts = sources_parts(&bytes);
         assert_eq!(parts.len(), 1);
@@ -424,7 +406,6 @@ mod tests {
         assert_eq!(text.matches("<file ").count(), 5, "{text}");
         assert_eq!(text.matches("<link ").count(), 8, "{text}");
         assert!(!text.contains(" file=\""), "{text}");
-        assert_eq!(text.matches("storeRow=").count(), 4, "{text}");
         let (back, report) = read_xlsx(&bytes).unwrap();
         assert!(report.warnings.is_empty(), "{:?}", report.warnings);
         let mut expected = wb.sheets[0].sources.clone();
@@ -447,24 +428,18 @@ mod tests {
         for i in 0..100_000u32 {
             s0.sources.insert(
                 CellRef::new(i / 10, i % 10),
-                SourceLink {
-                    file: file.into(),
-                    locator: format!("Sheet1!R{i}"),
-                    store_row: if i % 2 == 0 { format!("S!{i}") } else { String::new() },
-                    hash: Some(hash.into()),
-                    size: Some(48_213_337),
-                },
+                SourceLink { file: file.into(), locator: format!("Sheet1!R{i}"), hash: Some(hash.into()), size: Some(48_213_337) },
             );
         }
         let bytes = write_xlsx(&wb).unwrap();
         let parts = sources_parts(&bytes);
         assert_eq!(parts.len(), 1);
         let text = part_text(&bytes, &parts[0]);
-        // The document is named once; what's left is each link's own cell, locator and store row
-        // plus a little markup (about 22 MB as one flat element per link naming its file).
+        // The document is named once; what's left is each link's own cell and locator plus a
+        // little markup (about 22 MB as one flat element per link naming its file).
         assert_eq!(text.matches(file).count(), 1);
         assert_eq!(text.matches(hash).count(), 1);
-        let own: usize = wb.sheets[0].sources.iter().map(|(c, l)| c.a1().len() + l.locator.len() + l.store_row.len()).sum();
+        let own: usize = wb.sheets[0].sources.iter().map(|(c, l)| c.a1().len() + l.locator.len()).sum();
         let markup = (text.len() - own) / 100_000;
         assert!(markup <= 40, "{markup} bytes of markup per link");
         assert!(text.len() < 6_000_000, "the part is {} bytes", text.len());
@@ -477,7 +452,7 @@ mod tests {
     #[test]
     fn a_version_1_part_loads_no_links_and_is_kept_as_custom_xml() {
         let rel = r#"<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/item1.xml"/>"#;
-        let old = r#"<?xml version="1.0"?><sources xmlns="urn:socratics:sources:1"><sheet name="Data"><link ref="A1" file="f.pdf" locator="l" storeRow="r"/></sheet></sources>"#;
+        let old = r#"<?xml version="1.0"?><sources xmlns="urn:socratics:sources:1"><sheet name="Data"><link ref="A1" file="f.pdf" locator="l"/></sheet></sources>"#;
         let (wb, _) = read_xlsx(&crate::tests::minimal("<sheetData/>", &[("customXml/item1.xml", old)], rel, "")).unwrap();
         assert!(wb.sheets[0].sources.is_empty());
         let saved = write_xlsx(&wb).unwrap();

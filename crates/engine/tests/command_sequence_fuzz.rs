@@ -945,7 +945,7 @@ fn curated_params(rng: &mut Rng, wb: &Workbook, id: &str) -> Json {
                                     // Every third locator carries characters XML can't hold (PDF text has form feeds).
                                     let n = rng.int(1, 99);
                                     let locator = if n % 3 == 0 { format!("Page 2\u{0C}Row {n}\u{01}") } else { format!("Row {n}") };
-                                    let mut link = json!({"file": "Data Room/Cash/Statement.pdf", "locator": locator, "storeRow": format!("S!C{}", rng.int(1, 99))});
+                                    let mut link = json!({"file": "Data Room/Cash/Statement.pdf", "locator": locator});
                                     // Half carry the document's fingerprint.
                                     if rng.chance(50) {
                                         link["hash"] = json!(format!("{:064x}", rng.int(0, 1 << 60)));

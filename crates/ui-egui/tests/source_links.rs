@@ -25,16 +25,8 @@ fn session() -> Session {
     s.new_workbook();
     s.execute("range.setValues", json!({"range": "B2", "values": [[1318609], [42]]})).unwrap();
     s.execute("range.setValues", json!({"range": "D2", "values": [[10]]})).unwrap();
-    s.execute(
-        "source.set",
-        json!({"range": "B2", "links": [[{"file": STATEMENT, "locator": "ACCOUNT SUMMARY / Beginning Balance", "storeRow": "Heritage__statement!C12"}]]}),
-    )
-    .unwrap();
-    s.execute(
-        "source.set",
-        json!({"range": "D2", "links": [[{"file": "Data Room/GL/GL_Detail.xlsx", "locator": "GL Detail!C16102", "storeRow": "GL!C16102"}]]}),
-    )
-    .unwrap();
+    s.execute("source.set", json!({"range": "B2", "links": [[{"file": STATEMENT, "locator": "ACCOUNT SUMMARY / Beginning Balance"}]]})).unwrap();
+    s.execute("source.set", json!({"range": "D2", "links": [[{"file": "Data Room/GL/GL_Detail.xlsx", "locator": "GL Detail!C16102"}]]})).unwrap();
     for (cell, input) in [("C2", "=B2*2"), ("C3", "=B2+B3"), ("C4", "=B2+D2"), ("C5", "=INDIRECT(\"B2\")")] {
         s.execute("cell.set", json!({"cell": cell, "input": input})).unwrap();
     }
@@ -79,8 +71,7 @@ fn tips_name_the_source_of_hard_coded_values_only() {
     for formula in ["C2", "C3", "C4", "C5"] {
         assert_eq!(tip(formula), None, "{formula} is a formula");
     }
-    let ledger =
-        SourceLink { file: "Data Room/GL/GL_Detail.xlsx".into(), locator: "GL Detail!C16102".into(), store_row: String::new(), ..Default::default() };
+    let ledger = SourceLink { file: "Data Room/GL/GL_Detail.xlsx".into(), locator: "GL Detail!C16102".into(), ..Default::default() };
     assert_eq!(source_marks::label(&ledger), "GL Detail · GL Detail!C16102");
 }
 
@@ -634,9 +625,7 @@ fn first_frame_after_an_edit_on_a_large_model() {
     let values: Vec<Vec<f64>> = (0..rows).map(|r| (0..5).map(|c| (r * 5 + c) as f64).collect()).collect();
     s.execute("range.setValues", json!({"range": "A1", "values": values})).unwrap();
     let links: Vec<Vec<serde_json::Value>> = (0..rows)
-        .map(|r| {
-            (0..5).map(|c| json!({"file": "Data Room/GL/GL_Detail.xlsx", "locator": format!("GL Detail!C{}", r * 5 + c), "storeRow": ""})).collect()
-        })
+        .map(|r| (0..5).map(|c| json!({"file": "Data Room/GL/GL_Detail.xlsx", "locator": format!("GL Detail!C{}", r * 5 + c)})).collect())
         .collect();
     s.execute("source.set", json!({"range": "A1:E10000", "links": links})).unwrap();
     s.execute("cell.set", json!({"cell": "G1", "input": "=SUM(A1:E1)"})).unwrap();
@@ -675,7 +664,7 @@ fn first_frame_after_an_edit_on_a_large_model() {
 fn a_linked_label_beside_a_linked_figure_shows_nothing() {
     let mut s = session();
     s.execute("cell.set", json!({"cell": "A2", "input": "Beginning Balance"})).unwrap();
-    s.execute("source.set", json!({"range": "A2", "links": [[{"file": STATEMENT, "locator": "ACCOUNT SUMMARY", "storeRow": "x"}]]})).unwrap();
+    s.execute("source.set", json!({"range": "A2", "links": [[{"file": STATEMENT, "locator": "ACCOUNT SUMMARY"}]]})).unwrap();
     let mut h = harness(s, Services::default());
     let t = Tokens::light();
     let wb = &h.state().session.active().unwrap().wb;

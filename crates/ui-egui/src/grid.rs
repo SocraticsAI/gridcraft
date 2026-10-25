@@ -152,7 +152,7 @@ pub struct GridState {
     pub wheel_zoom: Option<WheelZoom>,
     /// A one-finger touch drag in progress: it pans the sheet instead of selecting.
     pub touch_pan: bool,
-    /// The source marker tooltip: (doc uid, revision, sheet, cell, missing) and its text, traced once per key.
+    /// The source marker tooltip: (doc uid, revision, sheet, cell, missing) and its text, worked out once per key.
     /// Whether the cell's source was reported missing is part of the key: `source.setMissing`
     /// changes no revision.
     pub source_tip: Option<((u64, u64, usize, CellRef, bool), Option<String>)>,

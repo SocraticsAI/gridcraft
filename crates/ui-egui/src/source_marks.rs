@@ -51,7 +51,7 @@ pub fn marker_rect(geo: &Geo, sh: &Sheet, c: CellRef) -> Option<Rect> {
     Some(Rect::from_min_size(r.left_top(), vec2(s, s)))
 }
 
-/// Paints the markers of one pane (rows × cols). States are read from the cells; nothing is traced.
+/// Paints the markers of one pane (rows × cols). States are read from the cells.
 #[allow(clippy::too_many_arguments)]
 pub fn paint_quadrant(d: &DocState, p: &Painter, geo: &Geo, si: usize, sh: &Sheet, rows: (u32, u32), cols: (u32, u32), t: &Tokens) {
     if geo.paper.is_some() || rows.0 > rows.1 || cols.0 > cols.1 {

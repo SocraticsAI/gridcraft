@@ -1,4 +1,3 @@
-// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Copy-on-write sparse cell storage.
 //!
 //! Cells live in bands of 64 rows, each band behind an `Arc`. Cloning a store (an undo snapshot)
@@ -86,14 +85,6 @@ impl CellStore {
                 .range(r.start.row..=r.end.row)
                 .flat_map(move |(row, cols)| cols.range(r.start.col..=r.end.col).map(move |(col, cell)| (CellRef::new(*row, *col), cell)))
         })
-    }
-    /// Rows in `r0..=r1` holding at least one cell, in order (none when `r0 > r1`). Lets a caller
-    /// count the rows a range scan walks, which [`CellStore::iter_range`] visits without yielding.
-    pub fn rows_in(&self, r0: u32, r1: u32) -> impl Iterator<Item = u32> + '_ {
-        (r0 <= r1)
-            .then(|| self.bands.range(r0 / BAND..=r1 / BAND).flat_map(move |(_, band)| band.rows.range(r0..=r1).map(|(row, _)| *row)))
-            .into_iter()
-            .flatten()
     }
     pub fn iter(&self) -> impl Iterator<Item = (CellRef, &Cell)> + '_ {
         self.bands
@@ -224,17 +215,6 @@ mod tests {
 
     fn c(r: u32, col: u32) -> CellRef {
         CellRef::new(r, col)
-    }
-
-    #[test]
-    fn rows_in_lists_stored_rows_across_bands() {
-        let mut s = CellStore::new();
-        for (r, col) in [(1, 0), (1, 5), (70, 2), (200, 0), (500, 1)] {
-            s.set(c(r, col), Cell::value(1.0.into()));
-        }
-        assert_eq!(s.rows_in(0, 300).collect::<Vec<_>>(), [1, 70, 200]);
-        assert_eq!(s.rows_in(70, 70).collect::<Vec<_>>(), [70]);
-        assert_eq!(s.rows_in(300, 0).count(), 0);
     }
 
     #[test]

@@ -1,4 +1,3 @@
-// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Formulas tab: AutoSum, Insert Function, names, auditing, calculation.
 
 use gridcraft_core::{CellRef, RangeRef};
@@ -554,8 +553,6 @@ fn calc_now(s: &mut Session, _: &Json) -> Result<Json> {
     let mut wb = (*d.wb).clone();
     d.calc.recalc_all(&mut wb);
     d.wb = std::sync::Arc::new(wb);
-    // Not an undo step, but a new version: values and spill ranges may have moved.
-    d.revision += 1;
     Ok(json!({"cells": d.calc.last_recalc_cells}))
 }
 

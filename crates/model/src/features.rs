@@ -339,8 +339,8 @@ pub struct Hyperlink {
 }
 
 /// Where a hard-coded value came from: a document in the engagement's data room and the place
-/// in it. A formula has none of its own (it is traced through its references). Moves with its
-/// cell like a note; typing over the cell drops it.
+/// in it. A formula has none of its own. Moves with its cell like a note; typing over the cell
+/// drops it. A field this version doesn't know (an older link's `storeRow`) is ignored on load.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceLink {
@@ -348,8 +348,6 @@ pub struct SourceLink {
     pub file: String,
     /// Where in the document: `GL Detail!C16102`, or `ACCOUNT SUMMARY / Beginning Balance`.
     pub locator: String,
-    /// The lineage store row the value was read from (for audit; opening the source doesn't need it).
-    pub store_row: String,
     /// The document's fingerprint when the link was made: its SHA-256, 64 lowercase hex digits
     /// ([`SourceLink::is_hash`]), so a host can find the document again after it moves. A value
     /// that isn't one is dropped on load.
