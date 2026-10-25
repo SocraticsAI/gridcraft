@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and the Source Inspector (cell source markers, the active linked cell's tint and source square, grey when its source is missing). See MODIFICATIONS.md.
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and the Source Inspector (cell source markers, the active linked cell's tint and source square). See MODIFICATIONS.md.
 //! The worksheet grid: virtualised painting of only the visible cells, frozen panes,
 //! headers, selection, fill handle, column/row resizing, text overflow, borders, conditional
 //! formats, tables, comments, filters, sparklines, floating charts/pictures/shapes and the
@@ -152,10 +152,8 @@ pub struct GridState {
     pub wheel_zoom: Option<WheelZoom>,
     /// A one-finger touch drag in progress: it pans the sheet instead of selecting.
     pub touch_pan: bool,
-    /// The source marker tooltip: (doc uid, revision, sheet, cell, missing) and its text, worked out once per key.
-    /// Whether the cell's source was reported missing is part of the key: `source.setMissing`
-    /// changes no revision.
-    pub source_tip: Option<((u64, u64, usize, CellRef, bool), Option<String>)>,
+    /// The source marker tooltip: (doc uid, revision, sheet, cell) and its text, worked out once per key.
+    pub source_tip: Option<((u64, u64, usize, CellRef), Option<String>)>,
     /// The source square beside the active linked cell this frame (hit-testing for clicks, tooltips and tests).
     pub source_square: Option<crate::source_marks::SourceSquare>,
 }
@@ -750,7 +748,7 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     // Source Inspector: the active linked cell's tint and source square (lit under the pointer
     // unless the fill handle, which wins, is there too).
     let source_cell = crate::source_marks::active_linked(app, &geo, si, sh, &sel);
-    let square = source_cell.and_then(|(c, missing)| crate::source_marks::SourceSquare::new(&geo, sh, c, missing));
+    let square = source_cell.and_then(|c| crate::source_marks::SourceSquare::new(&geo, sh, c));
     app.grid.source_square = square;
     let square_hot = square.is_some_and(|sq| {
         app.grid.drag == Drag::None
@@ -820,8 +818,7 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
 /// What the Source Inspector paints for the active cell: its tint, and its source square (and
 /// whether the pointer is on it).
 struct SourceInspect {
-    /// The active linked cell, and whether its source was reported missing (a grey tint).
-    tint: Option<(CellRef, bool)>,
+    tint: Option<CellRef>,
     square: Option<(crate::source_marks::SourceSquare, bool)>,
 }
 
@@ -861,7 +858,7 @@ fn paint_panes(
             continue;
         }
         let p = painter.with_clip_rect(*clip);
-        let tint = inspect.tint.map(|(c, missing)| (c, if missing { t.source_missing_selected_fill } else { t.source_selected_fill }));
+        let tint = inspect.tint.map(|c| (c, t.source_selected_fill));
         paint_quadrant_tinted(&p, geo, wb, si, sh, *rows, *cols, cf, t, tint);
         if app.ui.source_inspector
             && let Some(d) = app.session.active()
@@ -3181,10 +3178,10 @@ pub(crate) fn paint_overlays(
         }
         _ => None,
     };
-    if let (Some(c), Some(d)) = (marker, app.session.active()) {
-        let key = (d.uid, d.revision, si, c, crate::source_marks::is_missing(d, si, c));
+    if let (Some(c), Some((uid, revision))) = (marker, app.session.active().map(|d| (d.uid, d.revision))) {
+        let key = (uid, revision, si, c);
         if app.grid.source_tip.as_ref().is_none_or(|(k, _)| *k != key) {
-            app.grid.source_tip = Some((key, crate::source_marks::doc_tip(d, si, c)));
+            app.grid.source_tip = Some((key, crate::source_marks::tip(wb, si, c)));
         }
         if let Some((_, Some(text))) = &app.grid.source_tip {
             egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), egui::Id::new("source_tip"), egui::PopupAnchor::Pointer).show(|ui| {

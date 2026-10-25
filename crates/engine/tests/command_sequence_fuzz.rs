@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: cell source links and their fingerprints. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Command-sequence fuzzing: reproducible random sequences of commands on the sample workbooks,
 //! with invariants checked as they run. Per-command tests (`every_command_survives_empty_params`)
 //! miss the bugs that need a sequence — insert rows under a spill, undo, sort, paste into a table —
@@ -789,7 +789,6 @@ const CURATED: &[(&str, usize)] = &[
     ("formulas.deleteName", 1),
     ("edit.replace", 1),
     ("source.set", 2),
-    ("source.setMissing", 1),
 ];
 
 fn generate(rng: &mut Rng, s: &Session) -> Step {
@@ -945,13 +944,7 @@ fn curated_params(rng: &mut Rng, wb: &Workbook, id: &str) -> Json {
                                     // Every third locator carries characters XML can't hold (PDF text has form feeds).
                                     let n = rng.int(1, 99);
                                     let locator = if n % 3 == 0 { format!("Page 2\u{0C}Row {n}\u{01}") } else { format!("Row {n}") };
-                                    let mut link = json!({"file": "Data Room/Cash/Statement.pdf", "locator": locator});
-                                    // Half carry the document's fingerprint.
-                                    if rng.chance(50) {
-                                        link["hash"] = json!(format!("{:064x}", rng.int(0, 1 << 60)));
-                                        link["size"] = json!(rng.int(0, 1 << 40));
-                                    }
-                                    link
+                                    json!({"file": "Data Room/Cash/Statement.pdf", "locator": locator})
                                 } else {
                                     Json::Null
                                 }
@@ -961,15 +954,6 @@ fn curated_params(rng: &mut Rng, wb: &Workbook, id: &str) -> Json {
                 })
                 .collect();
             json!({"range": r.a1(), "links": links})
-        }
-        "source.setMissing" => {
-            let missing: Vec<Json> = (0..rng.below(4))
-                .map(|_| {
-                    let sheet = wb.sheets.get(rng.below(wb.sheets.len())).map(|sh| sh.name.clone()).unwrap_or_default();
-                    json!({"sheet": sheet, "cell": format!("{}{}", letter(rng.below(8) as u32), rng.int(1, 12))})
-                })
-                .collect();
-            json!({"missing": missing})
         }
         _ => maybe_range(rng),
     }

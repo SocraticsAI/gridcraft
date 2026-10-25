@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: cell source marker, selection tint, source square (linked and missing) and small switch colours. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: cell source marker, selection tint, source square and small switch colours. See MODIFICATIONS.md.
 //! Design tokens and fonts.
 //!
 //! Colours are our own, tuned to read like a modern desktop spreadsheet. Fonts come from the
@@ -60,14 +60,6 @@ pub struct Tokens {
     pub source_square_fill: Color32,
     pub source_square_hover: Color32,
     pub source_square_ink: Color32,
-    /// Source Inspector, for a linked number whose source document the host could not find
-    /// (`source.setMissing`): its marker, its tint when active, and its square (outlined in
-    /// `source_missing_mark`) at rest and under the pointer, and the square's "?".
-    pub source_missing_mark: Color32,
-    pub source_missing_selected_fill: Color32,
-    pub source_missing_square_fill: Color32,
-    pub source_missing_square_hover: Color32,
-    pub source_missing_square_ink: Color32,
     /// The small on/off switch (the sheet-tab bar's Sources toggle): its track on and off, each
     /// under the pointer, and its thumb.
     pub switch_on: Color32,
@@ -122,13 +114,6 @@ impl Tokens {
             source_square_fill: Color32::from_rgb(0xE6, 0xEE, 0xFA),
             source_square_hover: Color32::from_rgb(0xAF, 0xC7, 0xEC),
             source_square_ink: Color32::from_rgb(0x1B, 0x3A, 0x66),
-            // The same treatment in neutral greys, the small switch's family (its off track deepens
-            // to the same hover grey).
-            source_missing_mark: Color32::from_rgb(0x80, 0x80, 0x80),
-            source_missing_selected_fill: Color32::from_rgb(0xEE, 0xEE, 0xEE),
-            source_missing_square_fill: Color32::from_rgb(0xEE, 0xEE, 0xEE),
-            source_missing_square_hover: Color32::from_rgb(0xD4, 0xD4, 0xD4),
-            source_missing_square_ink: Color32::from_rgb(0x4A, 0x4A, 0x4A),
             // Socratics' small toggle: a slate track while on, a light grey one while off.
             switch_on: Color32::from_rgb(0x2E, 0x34, 0x3E),
             switch_on_hover: Color32::from_rgb(0x1C, 0x20, 0x26),
@@ -178,20 +163,13 @@ impl Tokens {
             notice_info_bg: Color32::from_rgb(0x24, 0x33, 0x44),
             notice_info_border: Color32::from_rgb(0x3B, 0x55, 0x72),
             // Cells stay white with black text in the dark theme (`grid_bg`, `cell_text`), so the
-            // marks, the selection tints and the source squares keep their light colours: a dark
-            // blue or grey would hide the cell's black text.
+            // marks, the selection tint and the source square keep their light colours: a dark blue
+            // would hide the cell's black text.
             sourced_mark: Color32::from_rgb(0x27, 0x4E, 0x8F),
             source_selected_fill: Color32::from_rgb(0xE6, 0xEE, 0xFA),
             source_square_fill: Color32::from_rgb(0xE6, 0xEE, 0xFA),
             source_square_hover: Color32::from_rgb(0xAF, 0xC7, 0xEC),
             source_square_ink: Color32::from_rgb(0x1B, 0x3A, 0x66),
-            // The same treatment in neutral greys, the small switch's family (its off track deepens
-            // to the same hover grey).
-            source_missing_mark: Color32::from_rgb(0x80, 0x80, 0x80),
-            source_missing_selected_fill: Color32::from_rgb(0xEE, 0xEE, 0xEE),
-            source_missing_square_fill: Color32::from_rgb(0xEE, 0xEE, 0xEE),
-            source_missing_square_hover: Color32::from_rgb(0xD4, 0xD4, 0xD4),
-            source_missing_square_ink: Color32::from_rgb(0x4A, 0x4A, 0x4A),
             // On the dark bar the slate track would vanish: a lighter slate while on, a mid grey while off.
             switch_on: Color32::from_rgb(0x7A, 0x82, 0x8D),
             switch_on_hover: Color32::from_rgb(0x8D, 0x95, 0xA0),

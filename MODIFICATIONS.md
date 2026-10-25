@@ -27,10 +27,11 @@ carries a notice on its first line.
    cut and paste, dragging a selection), copy and paste copies them, and typing, filling or
    replacing over a cell, clearing its contents and merging it into a neighbour drop its link. They are
    saved in the `.xlsx` as a custom XML part (namespace `urn:socratics:sources:2`) and read back, grouped
-   by document so a load of many cells from one file names it once: per sheet, one `<file path hash size>`
-   per distinct document holding a `<link ref locator>` per cell (an attribute it doesn't know, such as
-   an older link's `storeRow`, is ignored; an unshipped flat version 1 part, one element per cell naming
-   its file, isn't read and is kept as unmodelled custom XML). New commands `source.set`, `source.get`
+   by document so a load of many cells from one file names it once: per sheet, one `<file path>` per
+   distinct document holding a `<link ref locator>` per cell (an attribute it doesn't know, such as an
+   older `<file>`'s `hash` and `size` or an older link's `storeRow`, is ignored; an unshipped flat version
+   1 part, one element per cell naming its file, isn't read and is kept as unmodelled custom XML). New
+   commands `source.set`, `source.get`
    and `source.clear`. Only linked hard-coded numbers carry a marker, a small blue square in their
    top-left corner with a tooltip naming the source; unlinked numbers, linked text or logicals (labels,
    headers), formulas and spilled values show nothing. The markers are indicators only (a click on one
@@ -45,16 +46,7 @@ carries a notice on its first line.
    small labelled switch (a 32×16 pill with a white thumb, Socratics' small toggle), dropping its label
    when the bar is too short to keep the scrollbar usable. The tab viewport is sized to its tabs, so New
    Sheet follows the last tab; New Sheet is named for assistive tech. Normal view only. The ribbon also
-   gains Clear Sources, and the marker, tint, square and switch colours are theme tokens. A link may also
-   carry its document's fingerprint, `hash` (SHA-256, 64 lowercase hex digits) and `size` (bytes), so the
-   host can find the document after it moves; `source.set` takes them (refusing malformed ones), and they
-   are saved in JSON and as `hash`/`size` attributes of the link's `<file>` in the `.xlsx` part (a malformed one is dropped on
-   load, keeping the link). `source.list` returns every link in the workbook (sheet order, then row, then
-   column). `source.setMissing` (`{missing: [{sheet, cell}]}`) replaces the document's set of cells whose
-   source the host could not find: display state kept on the open document, never saved, journaled,
-   undone or marking it dirty. A linked number in it draws the same treatment in grey (marker, tint, and a
-   square holding a "?" with the tooltip "Source missing"); its square's click still goes to the host.
-   Files: `crates/model`
+   gains Clear Sources, and the marker, tint, square and switch colours are theme tokens. Files: `crates/model`
    (`src/{cellmap,features,sheet}.rs`), `crates/engine` (`src/lib.rs`, the new `src/source_state.rs`,
    `src/cmd/{data,edit,format,insert,mod,sheet}.rs`, the new `src/cmd/source.rs`,
    `tests/command_sequence_fuzz.rs`), `crates/xlsx` (`src/{lib,passthrough,read,write}.rs`, the new
