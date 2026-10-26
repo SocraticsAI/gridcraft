@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Worksheets.
 
 use std::collections::BTreeMap;
@@ -8,8 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::cell::{Cell, CellPicture};
 use crate::features::{
-    AutoFilter, Chart, Comment, CondFormat, Hyperlink, Image, LineInfo, PivotTable, PrintSettings, Shape, SheetProtection, Slicer, Sparkline, Table,
-    Validation,
+    AutoFilter, Chart, Comment, CondFormat, Hyperlink, Image, LineInfo, PivotTable, PrintSettings, Shape, SheetProtection, Slicer, SourceLink,
+    Sparkline, Table, Validation,
 };
 use crate::store::CellStore;
 use crate::style::{Color, StyleId};
@@ -102,6 +103,9 @@ pub struct Sheet {
     pub autofilter: Option<AutoFilter>,
     #[serde(with = "crate::cellmap")]
     pub comments: BTreeMap<CellRef, Comment>,
+    /// Source links of hard-coded values, by cell ([`SourceLink`]).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty", with = "crate::cellmap")]
+    pub sources: BTreeMap<CellRef, SourceLink>,
     #[serde(with = "crate::cellmap")]
     pub hyperlinks: BTreeMap<CellRef, Hyperlink>,
     pub charts: Vec<Chart>,
@@ -176,6 +180,7 @@ impl Sheet {
             tables: vec![],
             autofilter: None,
             comments: BTreeMap::new(),
+            sources: BTreeMap::new(),
             hyperlinks: BTreeMap::new(),
             charts: vec![],
             images: vec![],

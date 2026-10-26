@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! GridCraft file formats: XLSX (transitional and strict) and CSV import/export, plus XLSB and ODS data import
 //! and legacy Excel 97-2003 `.xls` (BIFF8) import, and password-encrypted workbooks (Agile and Standard encryption).
 //!
@@ -28,6 +29,7 @@ mod read;
 mod richdata;
 mod sheet_read;
 mod sheet_write;
+mod sources;
 mod styles;
 mod tables;
 #[cfg(any(test, feature = "test-support"))]

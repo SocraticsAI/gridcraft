@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and cell source links. See MODIFICATIONS.md.
 //! Writing a workbook as an XLSX package.
 
 use std::collections::{BTreeMap, HashMap};
@@ -155,6 +155,10 @@ impl Out {
     pub fn default_type(&mut self, ext: &str, ct: &str) {
         self.defaults.entry(ext.to_string()).or_insert_with(|| ct.to_string());
     }
+    /// Whether a part of this name (any case) has been written.
+    pub fn has_part(&self, name: &str) -> bool {
+        self.parts.iter().any(|(n, _)| n.eq_ignore_ascii_case(name))
+    }
 }
 
 /// Id of the i-th person of `xl/persons/person.xml`: a GUID-shaped, deterministic id (the
@@ -252,6 +256,7 @@ pub fn write_xlsx_named(wb: &Workbook, kind: XlsxKind, book_name: Option<&str>) 
 
     let mut wb_rels = Rels::default();
     let (sheets_xml, kept, pivots) = write_sheets(wb, &mut out, active, &mut wb_rels);
+    crate::sources::write(wb, &mut out, &mut wb_rels);
 
     let names = write_defined_names(wb, &kept, &out.chart_names);
 

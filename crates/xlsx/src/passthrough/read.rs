@@ -208,6 +208,10 @@ impl KeptReader {
         }
         let wb_rels = raw_rels(cx, wb_part).unwrap_or_default();
         for r in wb_rels.iter().filter(|r| is_kind(r, WORKBOOK_ROOTS)) {
+            // Cell source links are read into the model and written afresh: not kept as well.
+            if !r.external && is_kind(r, &["customXml"]) && crate::sources::is_sources_part(cx, &r.target) {
+                continue;
+            }
             if let Err(why) = self.keep(cx, &mut p, std::slice::from_ref(r), &mut seen) {
                 cx.warn(format!("{} part {} was dropped: {why}", kind(&r.rel_type), r.target));
             }
