@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Data tab: sort, filter, remove duplicates, text to columns, data validation, outline.
 
 use std::cmp::Ordering;

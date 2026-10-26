@@ -128,10 +128,14 @@ pub(super) fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
         };
         let mut moved_formulas = Vec::new();
         let mut moved_pictures = std::collections::BTreeMap::new();
+        let mut moved_sources = std::collections::BTreeMap::new();
         if cut_move {
             // Remove the source first (contents and formats), and fix references to it.
             let source = cx.sheet_mut(clip.sheet)?;
             moved_pictures = source.cell_pictures.iter().filter(|(c, _)| src.contains(**c)).map(|(c, p)| (*c, p.clone())).collect();
+            // Links move with their values: none is left on the cut cells.
+            moved_sources = source.sources.iter().filter(|(c, _)| src.contains(**c)).map(|(c, l)| (*c, l.clone())).collect();
+            source.sources.retain(|c, _| !src.contains(*c));
             let taken = source.take_cells(src);
             // Notes, hyperlinks and merged areas sit beside the cells, and a cut takes them
             // with the block: the destination is written from the clipboard snapshot taken
@@ -152,6 +156,7 @@ pub(super) fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
             let src_cell = if cut_move { moved_formulas.iter().find(|(k, _)| *k == sc).map(|(_, v)| v.clone()) } else { src_sheet.cell(sc).cloned() };
             let src_val = src_sheet.value(sc);
             let src_picture = if cut_move { moved_pictures.get(&sc) } else { src_sheet.cell_pictures.get(&sc) }.cloned();
+            let src_source = if cut_move { moved_sources.get(&sc) } else { src_sheet.sources.get(&sc) }.cloned();
             if skip_blanks && src_picture.is_none() && src_val.is_empty() && src_cell.as_ref().is_none_or(|x| x.formula.is_none()) {
                 continue;
             }
@@ -279,6 +284,28 @@ pub(super) fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
             }
             if let Some(picture) = new_picture {
                 cx.sheet_mut(dest_sheet)?.cell_pictures.insert(dest, picture);
+            }
+            // A pasted value brings its source link; a pasted reference (Paste Link) or
+            // a value combined with what was there (an operation) has none.
+            if matches!(
+                what,
+                What::All
+                    | What::AllExceptBorders
+                    | What::Formulas
+                    | What::FormulasAndNumberFormats
+                    | What::Values
+                    | What::ValuesAndNumberFormats
+            ) {
+                let kept = if link || op != "none" { None } else { src_source };
+                let sh = cx.sheet_mut(dest_sheet)?;
+                match kept {
+                    Some(l) => {
+                        sh.sources.insert(dest, l);
+                    }
+                    None => {
+                        sh.sources.remove(&dest);
+                    }
+                }
             }
             cx.touch(dest_sheet, dest);
         }

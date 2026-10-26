@@ -79,6 +79,7 @@ fn slide_together(wb: &gridcraft_model::Workbook, sheet: usize, areas: &[RangeRe
     dst.spill.retain(|c, _| !block.contains(*c));
     dst.spill_ranges.retain(|c, _| !block.contains(*c));
     dst.comments.retain(|c, _| !block.contains(*c));
+    dst.sources.retain(|c, _| !block.contains(*c));
     dst.merges.retain(|m| !m.intersects(&block));
     if across {
         dst.cols.retain(|c, _| !(block.start.col..=block.end.col).contains(c));
@@ -100,6 +101,11 @@ fn slide_together(wb: &gridcraft_model::Workbook, sheet: usize, areas: &[RangeRe
         for (c, comment) in src.comments.iter().filter(|(c, _)| a.contains(**c)) {
             if let Some(to) = c.offset(dr, dc) {
                 dst.comments.insert(to, comment.clone());
+            }
+        }
+        for (c, l) in src.sources.iter().filter(|(c, _)| a.contains(**c)) {
+            if let Some(to) = c.offset(dr, dc) {
+                dst.sources.insert(to, l.clone());
             }
         }
         for m in src.merges.iter().filter(|m| a.contains_range(m)) {

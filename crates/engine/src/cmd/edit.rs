@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Cell entry, selection, undo/redo, clipboard, clear, fill, find & replace.
 
 use gridcraft_core::{CellRef, MAX_ROWS, RangeRef, Value};
@@ -100,6 +101,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s, p, "comments"
         )),
         cmd!("edit.clearHyperlinks", "Clear Hyperlinks", ["Home", "Editing", "Clear"], None, "{range?}", has_doc, |s, p| clear(s, p, "hyperlinks")),
+        cmd!("edit.clearSources", "Clear Sources", ["Home", "Editing", "Clear"], None, "{range?}", has_doc, |s, p| clear(s, p, "sources")),
         cmd!("edit.fillDown", "Fill Down", ["Home", "Editing", "Fill"], Some("Cmd+D"), "{range?}", has_doc, |s, p| fill_dir(s, p, 1, 0)),
         cmd!("edit.fillRight", "Fill Right", ["Home", "Editing", "Fill"], Some("Cmd+R"), "{range?}", has_doc, |s, p| fill_dir(s, p, 0, 1)),
         cmd!("edit.fillUp", "Fill Up", ["Home", "Editing", "Fill"], None, "{range?}", has_doc, |s, p| fill_dir(s, p, -1, 0)),
@@ -230,6 +232,14 @@ fn clear(s: &mut Session, p: &Json, what: &str) -> Result<Json> {
     };
     edit(s, |cx| {
         for r in &ranges {
+            // Source links go with the contents (or alone): over the whole range, since a link
+            // can sit on a cell with no value, outside the used range.
+            if matches!(what, "all" | "contents" | "sources") {
+                cx.sheet_mut(sheet)?.sources.retain(|c, _| !r.contains(*c));
+            }
+            if what == "sources" {
+                continue;
+            }
             let r = match cx.wb.sheet(sheet).and_then(|sh| sh.used_range()) {
                 Some(u) => match r.intersection(&u) {
                     Some(x) => x,

@@ -49,6 +49,14 @@ pub(super) fn remove_duplicates(s: &mut Session, p: &Json) -> Result<Json> {
                     .filter_map(move |col| sh.cell_pictures.get(&CellRef::new(*row, col)).map(|p| (CellRef::new(start + i as u32, col), p.clone())))
             })
             .collect();
+        let sources: Vec<_> = keep
+            .iter()
+            .enumerate()
+            .flat_map(|(i, row)| {
+                (r.start.col..=r.end.col)
+                    .filter_map(move |col| sh.sources.get(&CellRef::new(*row, col)).map(|l| (CellRef::new(start + i as u32, col), l.clone())))
+            })
+            .collect();
         // Rows a filter keeps are compacted to `start + i`, so the notes and hyperlinks that
         // describe them move with them; the ones on removed rows are dropped with the row.
         let notes: Vec<_> = keep
@@ -90,6 +98,12 @@ pub(super) fn remove_duplicates(s: &mut Session, p: &Json) -> Result<Json> {
             }
         }
         shm.cell_pictures.extend(pictures);
+        // The compared rows lose their links; the kept rows' links land where those rows go.
+        if start <= r.end.row {
+            let block = RangeRef::new(CellRef::new(start, r.start.col), r.end);
+            shm.sources.retain(|c, _| !block.contains(*c));
+        }
+        shm.sources.extend(sources);
         for (at, cm) in notes {
             shm.comments.insert(at, cm);
         }
