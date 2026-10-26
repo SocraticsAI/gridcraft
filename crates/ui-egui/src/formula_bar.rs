@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and a read-only viewer's formula bar. See MODIFICATIONS.md.
 //! The formula bar (Name Box, ✕ ✓ fx, formula field) and the shared cell editor widget.
 
 use egui::{Color32, FontId, Key, Rect, Sense, Stroke, StrokeKind, TextEdit, pos2, vec2};
@@ -29,7 +29,10 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
                 if crate::widgets::icon_button(ui, Icon::Check, c, "Enter", vec2(22.0, 22.0)).clicked() && editing {
                     app.commit_edit(0, 0, false, false);
                 }
-                if crate::widgets::icon_button(ui, Icon::Fx, t.text, "Insert Function", vec2(26.0, 22.0)).clicked() {
+                // A read-only viewer inserts no function; the bar keeps its place with the button's width.
+                if app.session.read_only {
+                    ui.add_space(26.0);
+                } else if crate::widgets::icon_button(ui, Icon::Fx, t.text, "Insert Function", vec2(26.0, 22.0)).clicked() {
                     app.open_dialog("insertFunction", json!({}));
                 }
                 ui.add_space(4.0);
@@ -127,7 +130,10 @@ fn name_box(app: &mut SheetApp, ui: &mut egui::Ui, t: &Tokens) {
                 } else {
                     app.run("formulas.defineName", json!({"name": target}))
                 };
-                if let Err(e) = r {
+                // A read-only viewer naming the selection is refused silently, like any other edit.
+                if let Err(e) = r
+                    && !gridcraft_engine::EngineError::is_read_only_message(&e)
+                {
                     app.message = Some((gridcraft_engine::core::brand::name().into(), crate::clean_error(&e)));
                 }
                 app.grid.ensure_visible = true;

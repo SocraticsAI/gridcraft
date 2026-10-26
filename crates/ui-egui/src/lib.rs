@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch, cell source markers and the Source Inspector. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` and `Chrome::ribbon` switches, cell source markers and the Source Inspector, and the read-only viewer. See MODIFICATIONS.md.
 //! GridCraft's egui frontend: an Excel-style window (title bar with Quick Access Toolbar,
 //! ribbon, formula bar, grid, sheet tabs, status bar) over `gridcraft-engine`.
 //!
@@ -232,14 +232,25 @@ pub struct Chrome {
     /// The ribbon's Automate tab and its dialogs (Macros, Command Palette, Agent Control, Action
     /// Journal, About), however they are reached: Alt+F8, the VBA notice, `ui.ribbonTab`.
     pub automate: bool,
+    /// The ribbon: its tabs, their commands and the Alt key tips. Off, the formula bar sits right
+    /// under the title bar (or at the top); keyboard shortcuts still work. A host turns it off for
+    /// a read-only viewer ([`SheetApp::set_read_only`]).
+    pub ribbon: bool,
 }
 
 /// The dialogs the Automate tab opens; [`Chrome::automate`] turns them off with it.
 pub const AUTOMATE_DIALOGS: [&str; 5] = ["macros", "commandSearch", "agents", "journal", "about"];
 
+/// The dialogs a read-only viewer still opens ([`SheetApp::set_read_only`]): they find, go to,
+/// zoom, show statistics, check or evaluate, follow a link or ask an encrypted file's password.
+/// Every other dialog exists to make an edit, so a viewer doesn't open it, a new one included.
+/// Find opens without its Replace tab.
+pub const VIEWER_DIALOGS: [&str; 9] =
+    ["find", "goTo", "goToSpecial", "zoom", "statistics", "accessibility", "evaluateFormula", "openLink", "openPassword"];
+
 impl Default for Chrome {
     fn default() -> Self {
-        Chrome { title_bar: true, file_tab: true, automate: true }
+        Chrome { title_bar: true, file_tab: true, automate: true, ribbon: true }
     }
 }
 
@@ -465,6 +476,10 @@ impl SheetApp {
     /// clipboard is pasted instead, which reports "Nothing to paste.". Other text means the
     /// clipboard has moved on, so the cut's text is forgotten and pastes normally later.
     pub fn paste_external(&mut self, text: String) {
+        // A viewer has nowhere to paste: nothing happens, not even "Nothing to paste.".
+        if self.session.read_only {
+            return;
+        }
         if Self::same_clipboard_text(Some(&text), self.cut_text.as_deref()) {
             if self.session.clipboard.is_none() {
                 return self.run_or_alert("edit.paste", json!({}));
@@ -484,6 +499,9 @@ impl SheetApp {
     /// text there, no host clipboard (web), or the text that was there when GridCraft last copied
     /// without publishing, GridCraft's own clipboard is pasted.
     pub fn paste_from_clipboard(&mut self) {
+        if self.session.read_only {
+            return;
+        }
         match self.system_clipboard_text() {
             Some(text) if self.session.clipboard.is_none() || self.clipboard_text_at_copy.as_ref() != Some(&text) => self.paste_external(text),
             _ => self.run_or_alert("edit.paste", json!({})),
@@ -572,6 +590,10 @@ impl SheetApp {
 
     /// Shows a command error: a toast for an unavailable command, else a message box.
     fn alert(&mut self, e: String) {
+        // A viewer refuses edits silently: the keys and clicks that would make one just do nothing.
+        if gridcraft_engine::EngineError::is_read_only_message(&e) {
+            return;
+        }
         if e.contains("is not available right now") {
             self.toast = Some((e, now_ms()));
         } else {
@@ -760,6 +782,9 @@ impl SheetApp {
         if !self.chrome.automate && AUTOMATE_DIALOGS.contains(&name) {
             return;
         }
+        if self.session.read_only && !VIEWER_DIALOGS.contains(&name) {
+            return;
+        }
         if let Err(e) = self.commit_text_box_edit() {
             self.message = Some(("Text Box".into(), clean_error(&e)));
             return;
@@ -918,8 +943,12 @@ impl SheetApp {
         d.store_view(&tops);
     }
 
-    /// Starts editing the active cell. `text` replaces the content (typing) or pre-fills it.
+    /// Starts editing the active cell. `text` replaces the content (typing) or pre-fills it. A
+    /// read-only viewer never starts an edit.
     pub fn begin_edit(&mut self, text: Option<String>, from_formula_bar: bool) {
+        if self.session.read_only {
+            return;
+        }
         if let Err(e) = self.commit_text_box_edit() {
             self.message = Some(("Text Box".into(), clean_error(&e)));
             return;
@@ -1023,6 +1052,50 @@ impl SheetApp {
     pub fn cancel_edit(&mut self) {
         self.editor = None;
         self.session.mode = gridcraft_engine::Mode::Ready;
+    }
+
+    /// Makes this app a read-only viewer of its workbooks, or an editor again: sets
+    /// [`Session::read_only`] (see there for which commands still run). A viewer starts no in-cell,
+    /// formula-bar or text-box edit, no fill, move, resize or freeze drag, and opens only the
+    /// [`VIEWER_DIALOGS`]; its right-click menus offer Copy only, and its sheet tabs switch sheets
+    /// but don't rename, reorder or add one. Edits it refuses do nothing, with no message.
+    ///
+    /// Turning it on also drops what could still make an edit: an edit in progress (not committed),
+    /// a dialog other than the viewer's, open menus and drags, a cut, the format painter and a Draw
+    /// tool. The ribbon is the host's separate switch, [`Chrome::ribbon`]; a viewer usually turns
+    /// it off.
+    pub fn set_read_only(&mut self, on: bool) {
+        self.session.read_only = on;
+        if !on {
+            return;
+        }
+        self.cancel_edit();
+        self.cancel_text_box_edit();
+        if self.dialog.as_ref().is_some_and(|d| !VIEWER_DIALOGS.contains(&d.name())) {
+            self.dialog = None;
+        }
+        self.backstage = None;
+        self.grid.drag = grid::Drag::None;
+        self.grid.context_menu = None;
+        self.grid.header_menu = None;
+        self.grid.filter_menu = None;
+        self.grid.list_picker = None;
+        self.grid.renaming_tab = None;
+        self.grid.ruler_drag = None;
+        self.grid.hf_edit = None;
+        self.grid.hf_start = false;
+        self.grid.pane = None;
+        self.grid.ink.clear();
+        self.session.format_painter = None;
+        self.session.draw_tool.clear();
+        if self.session.clipboard.as_ref().is_some_and(|c| c.cut) {
+            self.session.clipboard = None;
+        }
+    }
+
+    /// Whether this app is a read-only viewer ([`SheetApp::set_read_only`]).
+    pub fn read_only(&self) -> bool {
+        self.session.read_only
     }
 
     /// Enter/Tab move inside a multi-cell selection, otherwise to the next cell.
@@ -1176,7 +1249,7 @@ impl SheetApp {
         if !self.chrome.file_tab {
             self.backstage = None;
         }
-        if self.backstage.is_none() {
+        if self.backstage.is_none() && self.chrome.ribbon {
             self.ribbon_keys(&ctx);
         }
         if self.chrome.title_bar {
@@ -1186,7 +1259,9 @@ impl SheetApp {
             // File tab: the Backstage view replaces everything below the title bar.
             backstage::show(self, ui);
         } else {
-            ribbon::show(self, ui);
+            if self.chrome.ribbon {
+                ribbon::show(self, ui);
+            }
             widgets::notice_bar(self, ui);
             if self.session.prefs.formula_bar {
                 formula_bar::show(self, ui);

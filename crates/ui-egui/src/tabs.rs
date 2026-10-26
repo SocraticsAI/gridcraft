@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: the Sources toggle at the end of the tab share, the New Sheet button right after the last tab. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: the Sources toggle at the end of the tab share, the New Sheet button right after the last tab, and a read-only viewer's tabs. See MODIFICATIONS.md.
 //! Sheet tabs and the status bar.
 
 use std::sync::Arc;
@@ -68,6 +68,9 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
             }
             ui.add_space(8.0);
             let section_start = ui.cursor().left();
+            // A read-only viewer's tabs switch sheets only: no New Sheet, rename, reorder or tab menu.
+            let ro = app.session.read_only;
+            let new_sheet_width = if ro { 0.0 } else { NEW_SHEET_WIDTH };
             let Some(d) = app.session.active() else { return };
             let sheets: Vec<(usize, String, Option<[u8; 3]>, bool)> =
                 d.wb.sheets
@@ -88,7 +91,7 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                     (ui.painter().layout_no_wrap(name.clone(), font, t.text).size().x + 32.0).max(72.0)
                 })
                 .sum();
-            let tabs_width = tabs_content.min((section - NEW_SHEET_WIDTH).max(100.0));
+            let tabs_width = tabs_content.min((section - new_sheet_width).max(100.0));
             // Reveal the selected sheet after navigation or layout changes, but
             // allow browsing other tabs without snapping back on every frame.
             let reveal_key = egui::Id::new((d.uid, d.wb.active_sheet, &sheets, tabs_width.to_bits()));
@@ -125,7 +128,7 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                                 let font = if active { theme::ui_bold(13.0) } else { theme::ui_font(13.0) };
                                 let tw = ui.painter().layout_no_wrap(name.clone(), font.clone(), t.text).size().x;
                                 let w = (tw + 32.0).max(72.0);
-                                let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), Sense::click_and_drag());
+                                let (r, resp) = ui.allocate_exact_size(vec2(w, 30.0), if ro { Sense::click() } else { Sense::click_and_drag() });
                                 if active && reveal_active {
                                     resp.scroll_to_me(None);
                                 }
@@ -169,12 +172,13 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                                 if resp.clicked() {
                                     activate_sheet(app, i);
                                 }
-                                if resp.double_clicked() {
+                                if resp.double_clicked() && !ro {
                                     app.grid.renaming_tab = Some(i);
                                     app.grid.rename_text = name.clone();
                                 }
                                 // Drag to reorder.
                                 if resp.drag_stopped()
+                                    && !ro
                                     && let Some(p) = ui.input(|inp| inp.pointer.interact_pos())
                                 {
                                     let dx = p.x - r.center().x;
@@ -183,6 +187,9 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                                         let to = (i as i64 + steps).max(0) as usize;
                                         app.run_or_alert("sheet.move", json!({"sheet": i, "to": to}));
                                     }
+                                }
+                                if ro {
+                                    continue;
                                 }
                                 resp.context_menu(|ui| {
                                     ui.set_min_width(180.0);
@@ -229,11 +236,13 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                         });
                     });
             });
-            ui.add_space(6.0);
-            let new_sheet = crate::widgets::icon_button(ui, Icon::Plus, t.text_dim, "New sheet (⇧F11)", vec2(26.0, 26.0));
-            new_sheet.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "New sheet"));
-            if new_sheet.clicked() {
-                app.run_or_alert("home.insertSheet", json!({}));
+            if !ro {
+                ui.add_space(6.0);
+                let new_sheet = crate::widgets::icon_button(ui, Icon::Plus, t.text_dim, "New sheet (⇧F11)", vec2(26.0, 26.0));
+                new_sheet.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "New sheet"));
+                if new_sheet.clicked() {
+                    app.run_or_alert("home.insertSheet", json!({}));
+                }
             }
             let sources_left = (section_start + section).max(ui.cursor().left()) + SOURCES_MARGIN / 2.0;
             ui.add_space(sources_left - ui.cursor().left());

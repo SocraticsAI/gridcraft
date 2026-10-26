@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: a read-only viewer doesn't edit text boxes. See MODIFICATIONS.md.
 //! In-place editing of a text box. The draft becomes one undoable engine command.
 
 use egui::{Color32, FontId, Key, Modifiers, Rect, TextEdit};
@@ -23,6 +24,9 @@ pub(crate) fn editor_id() -> egui::Id {
 
 impl SheetApp {
     pub fn begin_text_box_edit(&mut self, id: u32) -> bool {
+        if self.session.read_only {
+            return false;
+        }
         if !self.commit_edit(0, 0, false, false) {
             return false;
         }

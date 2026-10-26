@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and cell source links. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, cell source links, and read-only sessions. See MODIFICATIONS.md.
 //! The GridCraft engine façade.
 //!
 //! Every user-visible action is a command with a stable id (`cell.set`, `home.bold`,
@@ -54,6 +54,18 @@ pub enum EngineError {
     Other(String),
     #[error("internal error in `{0}` (the workbook was kept as it was): {1}")]
     Internal(String, String),
+    /// The session is read-only ([`Session::read_only`]) and the command would have changed a
+    /// workbook; it was rolled back.
+    #[error("`{0}` is not available: this workbook is read-only")]
+    ReadOnly(String),
+}
+
+impl EngineError {
+    /// Whether `message` is an [`EngineError::ReadOnly`] refusal as [`Session::run`] words it, so a
+    /// UI can refuse an edit in a viewer silently instead of showing an error.
+    pub fn is_read_only_message(message: &str) -> bool {
+        message.starts_with('`') && message.ends_with("` is not available: this workbook is read-only")
+    }
 }
 
 pub type Result<T> = std::result::Result<T, EngineError>;
@@ -263,6 +275,140 @@ pub struct Session {
     /// Review › Notes › Show All Notes: every note is displayed. An application display setting
     /// (like Excel's comment indicator option), so it's not saved in the file.
     pub show_all_notes: bool,
+    /// A viewer session: its workbooks are read-only. Off by default; a host turns it on for a
+    /// session that shows a workbook the user may look at but not change.
+    ///
+    /// Commands are classified by what they do, not by a list, so a new command is covered the
+    /// day it lands. A command runs; if it left a workbook *dirty* ([`DocState::is_dirty`]: its
+    /// content no longer what was opened or saved) it is rolled back and refused with
+    /// [`EngineError::ReadOnly`]. View state (the active sheet, zoom, the sheet's view, the scroll
+    /// position and active cell) is saved with the file but is not an edit: those commands keep a
+    /// clean workbook clean, so selecting, scrolling, switching sheets, zooming, finding and
+    /// copying still work. The undoable-command metadata can't draw this line on its own:
+    /// `view.zoom` records an undo step yet only changes the view, while `edit.undo` records none
+    /// and changes cells. Also refused, because they set up an edit or write a file rather than
+    /// change the workbook: a command that leaves a new cut on the clipboard (`edit.cut`), arms
+    /// the format painter or a Draw tool, and `file.save` / `file.saveAs`. A refused command's UI
+    /// requests (dialogs, edit mode) are dropped. A read-only session records no undo history,
+    /// and a document's `revision` doesn't move.
+    pub read_only: bool,
+}
+
+/// What a command in a read-only session may not change, captured before it runs
+/// ([`Session::read_only`]).
+struct ReadOnlyGuard {
+    docs: Vec<DocSnapshot>,
+    active: usize,
+    clipboard: Option<Clipboard>,
+    format_painter: Option<(Arc<Workbook>, usize, RangeRef, bool)>,
+    draw_tool: String,
+    mode: Mode,
+    ui_requests: usize,
+}
+
+/// A document's state apart from its calculation engine (rebuilt from the workbook on restore).
+struct DocSnapshot {
+    uid: u64,
+    wb: Arc<Workbook>,
+    saved: Arc<Workbook>,
+    selection: Selection,
+    sheet_selections: Vec<Selection>,
+    undo: Vec<HistoryEntry>,
+    redo: Vec<HistoryEntry>,
+    revision: u64,
+    path: Option<String>,
+    title: String,
+    unlocked_ranges: Vec<(String, String)>,
+    content_kind: Option<io::FileKind>,
+}
+
+impl ReadOnlyGuard {
+    /// Snapshots the session, then measures every document against itself: a command that keeps
+    /// a workbook clean only changed its view.
+    fn begin(s: &mut Session) -> ReadOnlyGuard {
+        let docs = s
+            .docs
+            .iter_mut()
+            .map(|d| {
+                let snap = DocSnapshot {
+                    uid: d.uid,
+                    wb: d.wb.clone(),
+                    saved: d.saved.clone(),
+                    selection: d.selection.clone(),
+                    sheet_selections: d.sheet_selections.clone(),
+                    undo: d.undo.clone(),
+                    redo: d.redo.clone(),
+                    revision: d.revision,
+                    path: d.path.clone(),
+                    title: d.title.clone(),
+                    unlocked_ranges: d.unlocked_ranges.clone(),
+                    content_kind: d.content_kind,
+                };
+                d.saved = d.wb.clone();
+                snap
+            })
+            .collect();
+        ReadOnlyGuard {
+            docs,
+            active: s.active,
+            clipboard: s.clipboard.clone(),
+            format_painter: s.format_painter.clone(),
+            draw_tool: s.draw_tool.clone(),
+            mode: s.mode,
+            ui_requests: s.ui_requests.len(),
+        }
+    }
+
+    /// Whether the command changed a workbook or set up an edit (see [`Session::read_only`]).
+    fn refuses(&self, s: &Session) -> bool {
+        let changed = s.docs.iter().any(|d| d.is_dirty() && self.docs.iter().any(|x| x.uid == d.uid));
+        let cut = |c: &Option<Clipboard>| c.as_ref().is_some_and(|c| c.cut);
+        changed
+            || (cut(&s.clipboard) && !cut(&self.clipboard))
+            || (s.format_painter.is_some() && self.format_painter.is_none())
+            || (!s.draw_tool.is_empty() && self.draw_tool.is_empty())
+    }
+
+    /// Puts everything back as it was before the command.
+    fn restore(self, s: &mut Session) {
+        for snap in self.docs {
+            let Some(d) = s.docs.iter_mut().find(|d| d.uid == snap.uid) else { continue };
+            if !Arc::ptr_eq(&d.wb, &snap.wb) {
+                d.wb = snap.wb;
+                d.calc.rebuild(&d.wb);
+            }
+            d.saved = snap.saved;
+            d.selection = snap.selection;
+            d.sheet_selections = snap.sheet_selections;
+            d.undo = snap.undo;
+            d.redo = snap.redo;
+            d.revision = snap.revision;
+            d.path = snap.path;
+            d.title = snap.title;
+            d.unlocked_ranges = snap.unlocked_ranges;
+            d.content_kind = snap.content_kind;
+        }
+        if self.active < s.docs.len() {
+            s.active = self.active;
+        }
+        s.clipboard = self.clipboard;
+        s.format_painter = self.format_painter;
+        s.draw_tool = self.draw_tool;
+        s.mode = self.mode;
+        s.ui_requests.truncate(self.ui_requests);
+    }
+
+    /// Keeps what the command did (view state only) and gives back each document's saved
+    /// workbook, so one that already had unsaved changes stays dirty.
+    fn finish(self, s: &mut Session) {
+        for snap in self.docs {
+            if let Some(d) = s.docs.iter_mut().find(|d| d.uid == snap.uid)
+                && !Arc::ptr_eq(&snap.wb, &snap.saved)
+            {
+                d.saved = snap.saved;
+            }
+        }
+    }
 }
 
 impl Session {
@@ -327,6 +473,11 @@ impl Session {
         if let Err(why) = (spec.enabled)(self) {
             return Err(EngineError::Disabled(id.to_string(), why));
         }
+        // A read-only session never writes a workbook's file (see `read_only`).
+        if self.read_only && matches!(id, "file.save" | "file.saveAs") {
+            return Err(EngineError::ReadOnly(id.to_string()));
+        }
+        let guard = self.read_only.then(|| ReadOnlyGuard::begin(self));
         let before = self.active().map(|d| (d.uid, d.wb.clone(), d.selection.clone()));
         let params = if params.is_null() { Json::Object(Default::default()) } else { params };
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (spec.run)(self, &params)));
@@ -343,16 +494,28 @@ impl Session {
                     d.selection = sel.clone();
                     d.calc.rebuild(&d.wb);
                 }
+                if let Some(guard) = guard {
+                    guard.restore(self);
+                }
                 return Err(EngineError::Internal(id.to_string(), msg));
             }
         };
+        if let Some(guard) = guard {
+            if guard.refuses(self) {
+                guard.restore(self);
+                return Err(EngineError::ReadOnly(id.to_string()));
+            }
+            guard.finish(self);
+        }
         if spec.journal && result.is_ok() {
             self.journal.push((id.to_string(), cmd::journal_params(&params)));
             if self.journal.len() > 10_000 {
                 self.journal.drain(..5_000);
             }
         }
+        // A read-only session keeps no history: a viewer has nothing to undo.
         if spec.undoable
+            && !self.read_only
             && let Some((uid, wb, sel)) = before
             && let Some(d) = self.docs.iter_mut().find(|d| d.uid == uid)
             && !Arc::ptr_eq(&d.wb, &wb)

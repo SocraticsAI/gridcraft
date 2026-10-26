@@ -54,6 +54,32 @@ carries a notice on its first line.
    (`src/{control,grid,icons,lib,ribbon,tabs,theme,widgets}.rs`, the new `src/source_marks.rs` and
    `tests/source_links.rs`). Not proposed upstream.
 
+4. **Read-only viewer** (2026). A host can show a workbook that looks exactly like one but can't be
+   changed, for example a source document beside the user's own. `Session` gains `read_only` (off by
+   default): a command runs, and if it left a workbook dirty (`DocState::is_dirty`, the engine's own
+   test for "changed the file") it is rolled back and refused with the new `EngineError::ReadOnly`
+   ("`cell.set` is not available: this workbook is read-only"; `EngineError::is_read_only_message`
+   recognises it as text). View state is saved with the file but is not an edit, so selecting,
+   scrolling, switching sheets, zooming, Page Layout view, finding and copying still run. Classifying
+   by effect rather than by a list (or by the undoable flag, which counts `view.zoom` as an edit and
+   `edit.undo` as not) covers new commands the day they land. Also refused: a command that leaves a
+   new cut on the clipboard or arms the format painter or a Draw tool, and `file.save` / `file.saveAs`.
+   A refused command's dialogs and edit requests are dropped; a read-only session keeps no undo
+   history and a document's `revision` doesn't move. In the UI, `SheetApp::set_read_only(on)` (and
+   `read_only()`) turns it on for an app: no in-cell, formula-bar or text-box edit starts (typing, F2,
+   double-click), Enter moves instead of pasting a marked copy, paste does nothing, refused edits show no message, no fill,
+   move, column/row resize, AutoFit, freeze, margin or object drag starts and the fill handle and list
+   arrow aren't drawn, filter and list menus don't open, only `VIEWER_DIALOGS` open (Find without its
+   Replace tab, Go To, Go To Special, Zoom, Statistics, Accessibility, Evaluate Formula, Open Link,
+   Open Password), the cell and header menus offer Copy only, sheet tabs switch sheets but the New
+   Sheet button, renaming, dragging and the tab menu are gone, and the formula bar has no Insert
+   Function button. Turning it on drops an edit in progress, open menus and drags, a cut, the format
+   painter and a Draw tool. `Chrome` gains `ribbon`, on by default, to hide the ribbon and its key
+   tips (a viewer usually turns it off); the formula bar, sheet tabs and status bar stay. Files:
+   `crates/engine` (`src/lib.rs`, `tests/command_sequence_fuzz.rs`, the new `tests/read_only.rs`) and
+   `crates/ui-egui` (`src/{dialogs,formula_bar,grid,lib,tabs,text_box}.rs`, the new
+   `tests/read_only_viewer.rs`). Not proposed upstream.
+
 An earlier change, the host chrome switch, was merged upstream as
 [storytold/gridcraft#1877](https://github.com/storytold/gridcraft/pull/1877) and is in GridCraft from v0.10.0.
 

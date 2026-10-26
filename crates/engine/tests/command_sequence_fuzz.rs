@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: cell source links, and read-only sessions. See MODIFICATIONS.md.
 //! Command-sequence fuzzing: reproducible random sequences of commands on the sample workbooks,
 //! with invariants checked as they run. Per-command tests (`every_command_survives_empty_params`)
 //! miss the bugs that need a sequence — insert rows under a spill, undo, sort, paste into a table —
@@ -131,6 +131,52 @@ fn command_sequences_keep_the_workbook_consistent() {
         }
     }
     assert!(reports.is_empty(), "{} failing seed(s)\n\n{}", reports.len(), reports.join("\n\n"));
+}
+
+/// A read-only session's workbook never changes, whatever runs: random sequences drawn like the
+/// ones above leave it clean, at the same revision and, view state aside, the same workbook.
+#[test]
+fn read_only_sessions_never_change_the_workbook() {
+    let seeds = env_num("GRIDCRAFT_FUZZ_SEEDS", 6);
+    let steps = env_num("GRIDCRAFT_FUZZ_STEPS", 40) as usize;
+    for seed in 0..seeds {
+        let mut rng = Rng(seed.wrapping_mul(0xA24B_AED4_963E_E407) ^ 0x0EAD);
+        let sample = SAMPLES[(seed % SAMPLES.len() as u64) as usize];
+        let mut s = Session::new();
+        s.execute("file.new", json!({"sample": sample})).expect("sample opens");
+        s.read_only = true;
+        let (start, revision) = {
+            let d = s.doc().expect("document");
+            (d.wb.clone(), d.revision)
+        };
+        for i in 0..steps {
+            let (id, params) = generate(&mut rng, &s);
+            let r = s.execute(&id, params.clone());
+            s.take_ui_requests();
+            let at = format!("seed {seed} ({sample}) step {i}: `{id}` {params}");
+            assert!(!matches!(r, Err(EngineError::Internal(..))), "{at} panicked: {r:?}");
+            assert_eq!(s.documents().len(), 1, "{at} changed the open documents");
+            let d = s.doc().expect("document");
+            assert!(!d.is_dirty(), "{at} dirtied a read-only workbook");
+            assert_eq!(d.revision, revision, "{at} moved the revision");
+            assert!(d.undo.is_empty(), "{at} recorded history");
+            if let Some(diff) = workbook_diff(&viewless(&start), &viewless(&d.wb)) {
+                panic!("{at} changed a read-only workbook: {diff}");
+            }
+        }
+    }
+}
+
+/// The workbook with every sheet's zoom and view (Normal, Page Layout…) reset too: a viewer may
+/// change them.
+fn viewless(wb: &Workbook) -> Workbook {
+    let mut wb = wb.clone();
+    for sh in wb.sheets.iter_mut() {
+        let sh = Arc::make_mut(sh);
+        sh.zoom = 100;
+        sh.view = gridcraft_engine::model::SheetViewMode::Normal;
+    }
+    wb
 }
 
 fn report(seed: u64, steps: usize, sample: &str, sequence: &[Step], f: &Failure) -> String {

@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and a read-only viewer's Find has no Replace tab. See MODIFICATIONS.md.
 //! Dialogs. Simple dialogs are forms (fields → a command with params); Format Cells, Insert
 //! Function, Find & Replace, Sort, Name Manager and the command palette are custom.
 //!
@@ -1805,8 +1805,13 @@ fn insert_function(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog, confir
 }
 
 fn find(app: &mut SheetApp, ui: &mut egui::Ui, d: &mut Dialog) {
+    // A read-only viewer finds but doesn't replace.
+    let tabs: &[&str] = if app.session.read_only { &["Find"] } else { &["Find", "Replace"] };
+    if app.session.read_only {
+        d.tab = "Find".into();
+    }
     ui.horizontal(|ui| {
-        for tab in ["Find", "Replace"] {
+        for &tab in tabs {
             if ui.selectable_label(d.tab == tab, tab).clicked() {
                 d.tab = tab.into();
             }
