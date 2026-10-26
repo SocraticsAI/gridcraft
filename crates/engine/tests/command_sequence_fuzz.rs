@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Command-sequence fuzzing: reproducible random sequences of commands on the sample workbooks,
 //! with invariants checked as they run. Per-command tests (`every_command_survives_empty_params`)
 //! miss the bugs that need a sequence — insert rows under a spill, undo, sort, paste into a table —
@@ -473,6 +474,9 @@ fn roundtrip_diff(wb: &Workbook) -> Result<(), String> {
             let first = first.unwrap_or_else(|| format!("{} formulas vs {}", fx.len(), fy.len()));
             return Err(format!("{}: formulas differ after reload: {first}", x.name));
         }
+        if x.sources != y.sources {
+            return Err(format!("{}: source links differ after reload: {} vs {}", x.name, x.sources.len(), y.sources.len()));
+        }
     }
     if wb.calc.mode == CalcMode::Automatic && !wb.calc.iterative {
         value_diff(wb, &back, "an XLSX save and reload").map_or(Ok(()), Err)?;
@@ -784,6 +788,7 @@ const CURATED: &[(&str, usize)] = &[
     ("formulas.defineName", 2),
     ("formulas.deleteName", 1),
     ("edit.replace", 1),
+    ("source.set", 2),
 ];
 
 fn generate(rng: &mut Rng, s: &Session) -> Step {
@@ -928,6 +933,28 @@ fn curated_params(rng: &mut Rng, wb: &Workbook, id: &str) -> Json {
             None => json!({"name": "Nope"}),
         },
         "edit.replace" => json!({"what": rng.pick(&["North", "1", "A", "Sales"]), "with": rng.pick(&["South", "2", "B", ""]), "all": true}),
+        "source.set" => {
+            let r = near_range(rng);
+            let links: Vec<Json> = (0..r.height())
+                .map(|_| {
+                    Json::Array(
+                        (0..r.width())
+                            .map(|_| {
+                                if rng.chance(70) {
+                                    // Every third locator carries characters XML can't hold.
+                                    let n = rng.int(1, 99);
+                                    let locator = if n % 3 == 0 { format!("page:{n}\u{0C}\u{01}") } else { format!("page:{n}") };
+                                    json!({"file": "Cash/Statement.pdf", "locator": locator})
+                                } else {
+                                    Json::Null
+                                }
+                            })
+                            .collect(),
+                    )
+                })
+                .collect();
+            json!({"range": r.a1(), "links": links})
+        }
         _ => maybe_range(rng),
     }
 }

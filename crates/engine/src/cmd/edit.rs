@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Cell entry, selection, undo/redo, clipboard, clear, fill, find & replace.
 
 use gridcraft_core::{CellRef, MAX_ROWS, RangeRef, Value};
@@ -70,6 +71,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s, p, "comments"
         )),
         cmd!("edit.clearHyperlinks", "Clear Hyperlinks", ["Home", "Editing", "Clear"], None, "{range?}", has_doc, |s, p| clear(s, p, "hyperlinks")),
+        cmd!("edit.clearSources", "Clear Sources", ["Home", "Editing", "Clear"], None, "{range?}", has_doc, |s, p| clear(s, p, "sources")),
         cmd!("edit.fillDown", "Fill Down", ["Home", "Editing", "Fill"], Some("Cmd+D"), "{range?}", has_doc, |s, p| fill_dir(s, p, 1, 0)),
         cmd!("edit.fillRight", "Fill Right", ["Home", "Editing", "Fill"], Some("Cmd+R"), "{range?}", has_doc, |s, p| fill_dir(s, p, 0, 1)),
         cmd!("edit.fillUp", "Fill Up", ["Home", "Editing", "Fill"], None, "{range?}", has_doc, |s, p| fill_dir(s, p, -1, 0)),
@@ -719,6 +721,7 @@ fn slide_together(wb: &gridcraft_model::Workbook, sheet: usize, areas: &[RangeRe
     dst.spill.retain(|c, _| !block.contains(*c));
     dst.spill_ranges.retain(|c, _| !block.contains(*c));
     dst.comments.retain(|c, _| !block.contains(*c));
+    dst.sources.retain(|c, _| !block.contains(*c));
     dst.merges.retain(|m| !m.intersects(&block));
     if across {
         dst.cols.retain(|c, _| !(block.start.col..=block.end.col).contains(c));
@@ -740,6 +743,11 @@ fn slide_together(wb: &gridcraft_model::Workbook, sheet: usize, areas: &[RangeRe
         for (c, comment) in src.comments.iter().filter(|(c, _)| a.contains(**c)) {
             if let Some(to) = c.offset(dr, dc) {
                 dst.comments.insert(to, comment.clone());
+            }
+        }
+        for (c, l) in src.sources.iter().filter(|(c, _)| a.contains(**c)) {
+            if let Some(to) = c.offset(dr, dc) {
+                dst.sources.insert(to, l.clone());
             }
         }
         for m in src.merges.iter().filter(|m| a.contains_range(m)) {
@@ -959,10 +967,14 @@ fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
         };
         let mut moved_formulas = Vec::new();
         let mut moved_pictures = std::collections::BTreeMap::new();
+        let mut moved_sources = std::collections::BTreeMap::new();
         if cut_move {
             // Remove the source first (contents and formats), and fix references to it.
             let source = cx.sheet_mut(clip.sheet)?;
             moved_pictures = source.cell_pictures.iter().filter(|(c, _)| src.contains(**c)).map(|(c, p)| (*c, p.clone())).collect();
+            // Links move with their values: none is left on the cut cells.
+            moved_sources = source.sources.iter().filter(|(c, _)| src.contains(**c)).map(|(c, l)| (*c, l.clone())).collect();
+            source.sources.retain(|c, _| !src.contains(*c));
             let taken = source.take_cells(src);
             for (c, _) in &taken {
                 cx.touch(clip.sheet, *c);
@@ -983,6 +995,7 @@ fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
                         };
                         let src_val = src_sheet.value(sc);
                         let src_picture = if cut_move { moved_pictures.get(&sc) } else { src_sheet.cell_pictures.get(&sc) }.cloned();
+                        let src_source = if cut_move { moved_sources.get(&sc) } else { src_sheet.sources.get(&sc) }.cloned();
                         if skip_blanks && src_picture.is_none() && src_val.is_empty() && src_cell.as_ref().is_none_or(|x| x.formula.is_none()) {
                             continue;
                         }
@@ -1149,6 +1162,28 @@ fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
                         if let Some(picture) = new_picture {
                             cx.sheet_mut(dest_sheet)?.cell_pictures.insert(dest, picture);
                         }
+                        // A pasted value brings its source link; a pasted reference (Paste Link) or
+                        // a value combined with what was there (an operation) has none.
+                        if matches!(
+                            what,
+                            What::All
+                                | What::AllExceptBorders
+                                | What::Formulas
+                                | What::FormulasAndNumberFormats
+                                | What::Values
+                                | What::ValuesAndNumberFormats
+                        ) {
+                            let kept = if link || op != "none" { None } else { src_source };
+                            let sh = cx.sheet_mut(dest_sheet)?;
+                            match kept {
+                                Some(l) => {
+                                    sh.sources.insert(dest, l);
+                                }
+                                None => {
+                                    sh.sources.remove(&dest);
+                                }
+                            }
+                        }
                         cx.touch(dest_sheet, dest);
                     }
                 }
@@ -1249,6 +1284,14 @@ fn clear(s: &mut Session, p: &Json, what: &str) -> Result<Json> {
     };
     edit(s, |cx| {
         for r in &ranges {
+            // Source links go with the contents (or alone): over the whole range, since a link
+            // can sit on a cell with no value, outside the used range.
+            if matches!(what, "all" | "contents" | "sources") {
+                cx.sheet_mut(sheet)?.sources.retain(|c, _| !r.contains(*c));
+            }
+            if what == "sources" {
+                continue;
+            }
             let r = match cx.wb.sheet(sheet).and_then(|sh| sh.used_range()) {
                 Some(u) => match r.intersection(&u) {
                     Some(x) => x,

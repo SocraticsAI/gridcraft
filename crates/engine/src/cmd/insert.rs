@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Insert tab: tables, charts, sparklines, pictures, shapes, hyperlinks, comments and notes,
 //! conditional formatting (Home › Styles) and symbols.
 
@@ -277,6 +278,13 @@ fn insert_table(s: &mut Session, p: &Json) -> Result<Json> {
             }
             sh.cells.shift_rows_in_cols(r.start.col, r.end.col, r.start.row, 1);
             sh.cell_pictures = std::mem::take(&mut sh.cell_pictures)
+                .into_iter()
+                .filter_map(|(c, v)| {
+                    let dest = if c.col >= r.start.col && c.col <= r.end.col && c.row >= r.start.row { c.offset(1, 0) } else { Some(c) };
+                    dest.map(|c| (c, v))
+                })
+                .collect();
+            sh.sources = std::mem::take(&mut sh.sources)
                 .into_iter()
                 .filter_map(|(c, v)| {
                     let dest = if c.col >= r.start.col && c.col <= r.end.col && c.row >= r.start.row { c.offset(1, 0) } else { Some(c) };
