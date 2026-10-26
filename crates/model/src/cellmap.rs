@@ -52,6 +52,19 @@ mod tests {
     }
 
     #[test]
+    fn a_source_quote_round_trips_through_json_and_is_omitted_when_none() {
+        let mut s = Sheet::new("S");
+        let plain = SourceLink { file: "f.pdf".into(), locator: "p1".into(), quote: None };
+        let quoted = SourceLink { file: "f.pdf".into(), locator: "p2".into(), quote: Some("Total \"net\"\nline 2\u{0C}".into()) };
+        s.sources.insert(CellRef::new(0, 0), plain);
+        s.sources.insert(CellRef::new(1, 0), quoted);
+        let json = serde_json::to_string(&s).expect("serialize");
+        assert_eq!(json.matches("\"quote\"").count(), 1, "{json}");
+        let back: Sheet = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.sources, s.sources);
+    }
+
+    #[test]
     fn source_links_survive_json_and_stay_out_of_it_when_empty() {
         let mut s = Sheet::new("S");
         let empty = serde_json::to_string(&s).expect("serialize");
@@ -61,6 +74,7 @@ mod tests {
             SourceLink {
                 file: "Data Room/2nd Tier Requests/Cash/Heritage_Trust_Bank_Statement_September_2019.pdf".into(),
                 locator: "ACCOUNT SUMMARY / Beginning Balance".into(),
+                quote: None,
             },
         );
         let json = serde_json::to_string(&s).expect("serialize");

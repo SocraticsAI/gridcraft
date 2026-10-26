@@ -348,7 +348,16 @@ pub struct SourceLink {
     pub file: String,
     /// Where in the document: `GL Detail!C16102`, or `ACCOUNT SUMMARY / Beginning Balance`.
     pub locator: String,
+    /// The text the document shows around the cited figure, written by the host's link tool so a
+    /// viewer can find the place again. At most [`MAX_SOURCE_QUOTE_CHARS`] characters; absent when
+    /// the host gave none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote: Option<String>,
 }
+
+/// Most characters a [`SourceLink::quote`] may hold (`source.set` refuses longer; a longer one
+/// read from a file is dropped, keeping the link).
+pub const MAX_SOURCE_QUOTE_CHARS: usize = 300;
 
 // ---------------------------------------------------------------- drawing objects
 

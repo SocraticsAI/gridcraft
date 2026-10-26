@@ -944,7 +944,13 @@ fn curated_params(rng: &mut Rng, wb: &Workbook, id: &str) -> Json {
                                     // Every third locator carries characters XML can't hold (PDF text has form feeds).
                                     let n = rng.int(1, 99);
                                     let locator = if n % 3 == 0 { format!("Page 2\u{0C}Row {n}\u{01}") } else { format!("Row {n}") };
-                                    json!({"file": "Data Room/Cash/Statement.pdf", "locator": locator})
+                                    // Some links carry a quote, sometimes with newlines or control characters.
+                                    if rng.chance(40) {
+                                        let quote = if n % 2 == 0 { format!("Total\nnet {n}\u{0C}\"x\" & <y>") } else { format!("Balance {n}") };
+                                        json!({"file": "Data Room/Cash/Statement.pdf", "locator": locator, "quote": quote})
+                                    } else {
+                                        json!({"file": "Data Room/Cash/Statement.pdf", "locator": locator})
+                                    }
                                 } else {
                                     Json::Null
                                 }

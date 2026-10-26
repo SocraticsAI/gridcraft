@@ -70,7 +70,7 @@ fn tips_name_the_source_of_hard_coded_values_only() {
     for formula in ["C2", "C3", "C4", "C5"] {
         assert_eq!(tip(formula), None, "{formula} is a formula");
     }
-    let ledger = SourceLink { file: "Data Room/GL/GL_Detail.xlsx".into(), locator: "GL Detail!C16102".into() };
+    let ledger = SourceLink { file: "Data Room/GL/GL_Detail.xlsx".into(), locator: "GL Detail!C16102".into(), quote: None };
     assert_eq!(source_marks::label(&ledger), "GL Detail · GL Detail!C16102");
 }
 

@@ -21,7 +21,7 @@ use std::fmt::Write as _;
 use std::sync::Arc;
 
 use gridcraft_core::CellRef;
-use gridcraft_model::{SourceLink, Workbook};
+use gridcraft_model::{MAX_SOURCE_QUOTE_CHARS, SourceLink, Workbook};
 
 use crate::package::{Rel, normalize};
 use crate::read::Ctx;
@@ -57,7 +57,11 @@ pub fn write(wb: &Workbook, out: &mut Out, wb_rels: &mut Rels) {
         for (file, links) in groups {
             let _ = write!(x, "<file path=\"{}\">", attr(file));
             for (c, l) in links {
-                let _ = write!(x, "<link ref=\"{}\" locator=\"{}\"/>", c.a1(), attr(&l.locator));
+                let _ = write!(x, "<link ref=\"{}\" locator=\"{}\"", c.a1(), attr(&l.locator));
+                if let Some(q) = l.quote.as_deref().filter(|q| !q.is_empty() && q.chars().count() <= MAX_SOURCE_QUOTE_CHARS) {
+                    let _ = write!(x, " quote=\"{}\"", attr(q));
+                }
+                x.push_str("/>");
             }
             x.push_str("</file>");
         }
@@ -143,7 +147,13 @@ pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
                     }
                     let Some(cell) = l.attr("ref").and_then(CellRef::parse).filter(CellRef::is_valid) else { continue };
                     let Some(locator) = l.attr("locator").map(decode_xstring).filter(|s| !s.trim().is_empty()) else { continue };
-                    sheet.sources.insert(cell, SourceLink { file: file.clone(), locator });
+                    // A quote that is blank or over the cap is dropped; the link stays.
+                    let quote = l
+                        .attr("quote")
+                        .filter(|q| q.len() <= MAX_SOURCE_QUOTE_CHARS * 12 * 4)
+                        .map(decode_xstring)
+                        .filter(|q| !q.is_empty() && q.chars().count() <= MAX_SOURCE_QUOTE_CHARS);
+                    sheet.sources.insert(cell, SourceLink { file: file.clone(), locator, quote });
                     count += 1;
                 }
             }
@@ -162,7 +172,11 @@ mod tests {
     use crate::{read_xlsx, write_xlsx};
 
     fn link(locator: &str) -> SourceLink {
-        SourceLink { file: "Data Room/2nd Tier Requests/Cash/Heritage_Trust_Bank_Statement_September_2019.pdf".into(), locator: locator.into() }
+        SourceLink {
+            file: "Data Room/2nd Tier Requests/Cash/Heritage_Trust_Bank_Statement_September_2019.pdf".into(),
+            locator: locator.into(),
+            quote: None,
+        }
     }
 
     /// Parts whose content is a source-links part (not its properties part).
@@ -198,7 +212,10 @@ mod tests {
         let s0 = wb.sheet_mut(0).unwrap();
         s0.set_value(CellRef::new(1, 1), 1_318_609.0.into());
         s0.sources.insert(CellRef::new(1, 1), link("ACCOUNT SUMMARY / Beginning Balance"));
-        s0.sources.insert(CellRef::new(2, 1), SourceLink { file: "Data Room/a & b <c>.xlsx".into(), locator: "GL Detail!C16102 \"x\"".into() });
+        s0.sources.insert(
+            CellRef::new(2, 1),
+            SourceLink { file: "Data Room/a & b <c>.xlsx".into(), locator: "GL Detail!C16102 \"x\"".into(), quote: None },
+        );
         wb.sheet_mut(1).unwrap().sources.insert(CellRef::new(0, 0), link("Other"));
         let bytes = write_xlsx(&wb).unwrap();
         assert_eq!(sources_parts(&bytes), vec!["customXml/item1.xml".to_string()]);
@@ -216,11 +233,15 @@ mod tests {
     fn control_characters_and_escape_lookalikes_in_links_reopen_exactly() {
         let mut wb = Workbook::new();
         let s0 = wb.sheet_mut(0).unwrap();
-        s0.sources.insert(CellRef::new(0, 0), SourceLink { file: "Data Room/f.pdf".into(), locator: "Page 2\u{0C}Beginning Balance".into() });
         s0.sources
-            .insert(CellRef::new(1, 0), SourceLink { file: "Data Room/a\u{01}b.pdf".into(), locator: "x\u{01}y\u{0B}z\u{7F}\u{1F}\u{FFFE}".into() });
+            .insert(CellRef::new(0, 0), SourceLink { file: "Data Room/f.pdf".into(), locator: "Page 2\u{0C}Beginning Balance".into(), quote: None });
+        s0.sources.insert(
+            CellRef::new(1, 0),
+            SourceLink { file: "Data Room/a\u{01}b.pdf".into(), locator: "x\u{01}y\u{0B}z\u{7F}\u{1F}\u{FFFE}".into(), quote: None },
+        );
         // Text that already looks like Excel's `_xHHHH_` escape stays literal.
-        s0.sources.insert(CellRef::new(2, 0), SourceLink { file: "Data Room/_x0041_.pdf".into(), locator: "_x005F_ and _x000C_".into() });
+        s0.sources
+            .insert(CellRef::new(2, 0), SourceLink { file: "Data Room/_x0041_.pdf".into(), locator: "_x005F_ and _x000C_".into(), quote: None });
         let bytes = write_xlsx(&wb).unwrap();
         let (back, _) = read_xlsx(&bytes).unwrap();
         assert_eq!(back.sheets[0].sources, wb.sheets[0].sources);
@@ -259,7 +280,7 @@ mod tests {
         let s0 = wb.sheet_mut(0).unwrap();
         let long = "x".repeat(70_000);
         for i in 0..1_000u32 {
-            s0.sources.insert(CellRef::new(i, 0), SourceLink { file: format!("Data Room/f{i}.pdf"), locator: format!("{i}:{long}") });
+            s0.sources.insert(CellRef::new(i, 0), SourceLink { file: format!("Data Room/f{i}.pdf"), locator: format!("{i}:{long}"), quote: None });
         }
         let bytes = write_xlsx(&wb).unwrap();
         let (back, report) = read_xlsx(&bytes).unwrap();
@@ -283,8 +304,8 @@ mod tests {
         assert!(!report.warnings.iter().any(|w| w.contains("source")), "{:?}", report.warnings);
         let s = &wb.sheets[0];
         assert_eq!(s.sources.len(), 3);
-        assert_eq!(s.sources.get(&CellRef::new(0, 0)), Some(&SourceLink { file: "f.pdf".into(), locator: "l".into() }));
-        assert_eq!(s.sources.get(&CellRef::new(2, 0)), Some(&SourceLink { file: "f.pdf".into(), locator: "n".into() }));
+        assert_eq!(s.sources.get(&CellRef::new(0, 0)), Some(&SourceLink { file: "f.pdf".into(), locator: "l".into(), quote: None }));
+        assert_eq!(s.sources.get(&CellRef::new(2, 0)), Some(&SourceLink { file: "f.pdf".into(), locator: "n".into(), quote: None }));
         let saved = write_xlsx(&wb).unwrap();
         let parts = sources_parts(&saved);
         assert_eq!(parts.len(), 1);
@@ -319,7 +340,7 @@ mod tests {
         wb.sheets.push(Arc::new(Sheet::new("Q3 \"Café\" & <Co>")));
         let a = "Data Room/a & b <c> \"d\".pdf";
         let b = "Data Room/Café/_x0041_\u{01}.xlsx";
-        let mk = |file: &str, locator: &str| SourceLink { file: file.into(), locator: locator.into() };
+        let mk = |file: &str, locator: &str| SourceLink { file: file.into(), locator: locator.into(), quote: None };
         let s0 = wb.sheet_mut(0).unwrap();
         s0.sources.insert(CellRef::new(0, 0), mk(a, "Page 1 / Total & \"net\""));
         s0.sources.insert(CellRef::new(1, 0), mk(a, "Page 2 <x>"));
@@ -352,7 +373,7 @@ mod tests {
         let mut wb = Workbook::new();
         let s0 = wb.sheet_mut(0).unwrap();
         for i in 0..100_000u32 {
-            s0.sources.insert(CellRef::new(i / 10, i % 10), SourceLink { file: file.into(), locator: format!("Sheet1!R{i}") });
+            s0.sources.insert(CellRef::new(i / 10, i % 10), SourceLink { file: file.into(), locator: format!("Sheet1!R{i}"), quote: None });
         }
         let bytes = write_xlsx(&wb).unwrap();
         let parts = sources_parts(&bytes);
@@ -388,5 +409,54 @@ mod tests {
         assert!(kept, "the version 1 part is kept as unmodelled custom XML");
         let (back, _) = read_xlsx(&saved).unwrap();
         assert!(back.sheets[0].sources.is_empty());
+    }
+
+    #[test]
+    fn a_quote_survives_an_xlsx_round_trip_exactly_and_is_optional() {
+        let mut wb = Workbook::new();
+        let s0 = wb.sheet_mut(0).unwrap();
+        let mk = |q: Option<&str>| SourceLink { file: "Data Room/f.pdf".into(), locator: "Page 2".into(), quote: q.map(str::to_string) };
+        let quotes = [
+            None,
+            Some("Beginning balance $1,318,609"),
+            Some("line one\nline two\r\n\ttabbed \"q\" & <b> 'x'"),
+            Some("ctl\u{01}\u{0C}\u{0B}\u{7F}\u{1F}\u{FFFE} caf\u{e9} \u{3a3}"),
+            Some("_x0041_ and _x005F_ and _x000C_"),
+        ];
+        for (i, q) in quotes.iter().enumerate() {
+            s0.sources.insert(CellRef::new(i as u32, 0), mk(*q));
+        }
+        let at_cap = "q".repeat(super::MAX_SOURCE_QUOTE_CHARS);
+        s0.sources.insert(CellRef::new(9, 0), mk(Some(&at_cap)));
+        let bytes = write_xlsx(&wb).unwrap();
+        let text = part_text(&bytes, &sources_parts(&bytes)[0]);
+        assert_eq!(text.matches(" quote=").count(), 5, "{text}");
+        let (back, report) = read_xlsx(&bytes).unwrap();
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+        assert_eq!(back.sheets[0].sources, wb.sheets[0].sources);
+        let (third, _) = read_xlsx(&write_xlsx(&back).unwrap()).unwrap();
+        assert_eq!(third.sheets[0].sources, wb.sheets[0].sources);
+        // Without any quote the part has no `quote` attribute at all.
+        let mut plain = Workbook::new();
+        plain.sheet_mut(0).unwrap().sources.insert(CellRef::new(0, 0), mk(None));
+        let bytes = write_xlsx(&plain).unwrap();
+        assert!(!part_text(&bytes, &sources_parts(&bytes)[0]).contains("quote"));
+    }
+
+    #[test]
+    fn an_oversized_or_blank_quote_on_read_is_dropped_and_the_link_kept() {
+        let rel = r#"<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/item1.xml"/>"#;
+        let long = "x".repeat(super::MAX_SOURCE_QUOTE_CHARS + 1);
+        let huge = "y".repeat(100_000);
+        let part = format!(
+            r#"<?xml version="1.0"?><sources xmlns="urn:socratics:sources:2"><sheet name="Data"><file path="f.pdf"><link ref="A1" locator="a" quote="{long}"/><link ref="A2" locator="b" quote="{huge}"/><link ref="A3" locator="c" quote=""/><link ref="A4" locator="d" quote="ok"/><link ref="A5" locator="e" quote="bad _x00ZZ_ ok"/></sheet></sources>"#
+        );
+        let (wb, _) = read_xlsx(&crate::tests::minimal("<sheetData/>", &[("customXml/item1.xml", part.as_str())], rel, "")).unwrap();
+        let s = &wb.sheets[0].sources;
+        assert_eq!(s.len(), 5);
+        for (r, q) in [(0, None), (1, None), (2, None), (3, Some("ok"))] {
+            assert_eq!(s.get(&CellRef::new(r, 0)).unwrap().quote.as_deref(), q, "row {r}");
+        }
+        assert!(s.get(&CellRef::new(4, 0)).is_some());
     }
 }

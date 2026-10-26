@@ -4,7 +4,7 @@
 //! then their links (`source.set`); typing over a cell drops its link.
 
 use gridcraft_core::CellRef;
-use gridcraft_model::SourceLink;
+use gridcraft_model::{MAX_SOURCE_QUOTE_CHARS, SourceLink};
 use serde_json::{Value as Json, json};
 
 use super::*;
@@ -20,11 +20,11 @@ pub fn specs() -> Vec<CommandSpec> {
             "Set Cell Sources",
             [],
             None,
-            "{sheet?, range: \"A1:C3\", links: [[{file, locator} | null]] (one row per range row; null removes a link)} → {linked}",
+            "{sheet?, range: \"A1:C3\", links: [[{file, locator, quote?} | null]] (one row per range row; null removes a link)} → {linked}",
             has_doc,
             set_links
         ),
-        cmd!(query "source.get", "Cell Source", [], None, "{sheet?, cell: \"B2\"} → {link: {file, locator} | null}", has_doc, get_link),
+        cmd!(query "source.get", "Cell Source", [], None, "{sheet?, cell: \"B2\"} → {link: {file, locator, quote?} | null}", has_doc, get_link),
         cmd!("source.clear", "Clear Cell Sources", [], None, "{sheet?, range: \"A1:C3\"} → {cleared}", has_doc, clear_links),
     ]
 }
@@ -37,7 +37,19 @@ fn link_param(v: &Json) -> std::result::Result<Option<SourceLink>, String> {
             let text = |k: &str| o.get(k).and_then(Json::as_str).map(str::trim).filter(|t| !t.is_empty()).map(str::to_string);
             let file = text("file").ok_or("a link needs a `file`")?;
             let locator = text("locator").ok_or("a link needs a `locator`")?;
-            Ok(Some(SourceLink { file, locator }))
+            // The optional quote is trimmed; blank or absent means none. Over the cap is refused, not cut.
+            let quote = match o.get("quote") {
+                None | Some(Json::Null) => None,
+                Some(Json::String(q)) => {
+                    let q = q.trim();
+                    if q.chars().count() > MAX_SOURCE_QUOTE_CHARS {
+                        return Err(format!("`quote` is longer than {MAX_SOURCE_QUOTE_CHARS} characters"));
+                    }
+                    (!q.is_empty()).then(|| q.to_string())
+                }
+                Some(_) => return Err("`quote` is a string".into()),
+            };
+            Ok(Some(SourceLink { file, locator, quote }))
         }
         _ => Err("each link is an object or null".into()),
     }
@@ -525,5 +537,65 @@ mod tests {
         // Whole columns: one pass over the links, not one per row.
         s.execute("home.mergeAcross", json!({"range": "I:J"})).unwrap();
         assert_eq!(locator(&s, "B6").as_deref(), Some("b6"));
+    }
+
+    fn quote_on(s: &Session, cell: &str) -> Option<String> {
+        let wb = &s.doc().unwrap().wb;
+        wb.sheet(0).unwrap().sources.get(&CellRef::parse(cell).unwrap()).and_then(|l| l.quote.clone())
+    }
+
+    fn quoted(locator: &str, quote: &str) -> Json {
+        json!({"file": "Data Room/Cash/Statement.pdf", "locator": locator, "quote": quote})
+    }
+
+    #[test]
+    fn a_quote_is_set_trimmed_read_back_and_capped() {
+        let mut s = s();
+        let q = "Total \"net\"\nline 2\u{0C}\u{01} & <x>";
+        s.execute("source.set", json!({"range": "A1:A3", "links": [[quoted("a", &format!("  {q} \n"))], [link_json("b")], [quoted("c", "   ")]]}))
+            .unwrap();
+        assert_eq!(quote_on(&s, "A1").as_deref(), Some(q));
+        assert_eq!(s.execute("source.get", json!({"cell": "A1"})).unwrap()["link"]["quote"], q);
+        assert_eq!(quote_on(&s, "A2"), None);
+        assert!(s.execute("source.get", json!({"cell": "A2"})).unwrap()["link"].get("quote").is_none(), "omitted when none");
+        assert_eq!(quote_on(&s, "A3"), None, "a blank quote is none");
+        // Exactly the cap (counted in characters, not bytes) is accepted; one more is refused and changes nothing.
+        let at_cap = "\u{e9}".repeat(300);
+        s.execute("source.set", json!({"range": "B1", "links": [[quoted("a", &at_cap)]]})).unwrap();
+        assert_eq!(quote_on(&s, "B1").as_deref(), Some(at_cap.as_str()));
+        let before = link_count(&s, "Sheet1");
+        let over = "x".repeat(301);
+        assert!(s.execute("source.set", json!({"range": "B2", "links": [[quoted("a", &over)]]})).is_err());
+        assert!(s.execute("source.set", json!({"range": "B2", "links": [[{"file": "f", "locator": "l", "quote": 5}]]})).is_err());
+        assert_eq!(link_count(&s, "Sheet1"), before);
+    }
+
+    #[test]
+    fn a_quote_travels_with_its_link_through_cut_paste_copy_sort_and_insert_row() {
+        let mut s = s();
+        s.execute("range.setValues", json!({"range": "A1", "values": [["Rank", "Amount"], [2, 200], [1, 100]]})).unwrap();
+        s.execute("source.set", json!({"range": "B2", "links": [[quoted("two", "two hundred")]]})).unwrap();
+        s.execute("data.sort", json!({"range": "A1:B3", "header": true, "keys": [{"column": "A", "order": "asc"}]})).unwrap();
+        assert_eq!(quote_on(&s, "B3").as_deref(), Some("two hundred"));
+        s.execute("home.insertRows", json!({"rows": "1:1"})).unwrap();
+        assert_eq!(quote_on(&s, "B4").as_deref(), Some("two hundred"));
+        s.execute("edit.copy", json!({"range": "B4"})).unwrap();
+        s.execute("edit.paste", json!({"at": "D1"})).unwrap();
+        assert_eq!(quote_on(&s, "D1").as_deref(), Some("two hundred"));
+        assert_eq!(quote_on(&s, "B4").as_deref(), Some("two hundred"));
+        s.execute("edit.cut", json!({"range": "B4"})).unwrap();
+        s.execute("edit.paste", json!({"at": "F6"})).unwrap();
+        assert_eq!(quote_on(&s, "F6").as_deref(), Some("two hundred"));
+        assert_eq!(quote_on(&s, "B4"), None);
+    }
+
+    #[test]
+    fn quotes_survive_a_saved_xlsx() {
+        let mut s = s();
+        s.execute("source.set", json!({"range": "A1:A2", "links": [[quoted("a", "x\ny\u{0C}")], [link_json("b")]]})).unwrap();
+        let wb = &s.doc().unwrap().wb;
+        let bytes = crate::io::save_bytes(wb, "book.xlsx").unwrap();
+        let (back, _) = crate::io::open_bytes("book.xlsx", &bytes).unwrap();
+        assert_eq!(back.sheet(0).unwrap().sources, wb.sheet(0).unwrap().sources);
     }
 }

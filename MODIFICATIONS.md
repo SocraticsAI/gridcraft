@@ -50,7 +50,12 @@ carries a notice on its first line.
    `tests/command_sequence_fuzz.rs`), `crates/xlsx` (`src/{lib,passthrough,read,write}.rs`, the new
    `src/sources.rs`, `src/tests/passthrough_tests.rs`) and `crates/ui-egui`
    (`src/{control,grid,icons,lib,ribbon,tabs,theme,widgets}.rs`, the new `src/source_marks.rs` and
-   `tests/source_links.rs`). Not proposed upstream.
+   `tests/source_links.rs`). A link may also carry an optional `quote` (`SourceLink::quote`): the text the
+   document shows around the cited figure, written by the host's link tool. `source.set` takes it per link
+   (`{file, locator, quote?}`; trimmed, blank means none, more than 300 characters is refused with a
+   bad-params error, not cut), `source.get` returns it, it moves and copies with its link, and the `.xlsx`
+   writes it as a `quote` attribute on `<link>` (same `_xHHHH_` encoding; namespace unchanged, an absent
+   attribute reads as none; a blank or oversized one on read is dropped and the link kept). Not proposed upstream.
 
 An earlier change, the host chrome switch, was merged upstream as
 [storytold/gridcraft#1877](https://github.com/storytold/gridcraft/pull/1877) and is in GridCraft from v0.10.0.
