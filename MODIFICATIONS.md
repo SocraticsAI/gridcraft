@@ -34,19 +34,17 @@ carries a notice on its first line.
    commands `source.set`, `source.get`
    and `source.clear`. Only linked hard-coded numbers carry a marker, a small blue square in their
    top-left corner with a tooltip naming the source; unlinked numbers, linked text or logicals (labels,
-   headers), formulas and spilled values show nothing. The markers are indicators only (a click on one
-   just selects the cell). When the active cell (only the active cell, even in a range) holds a linked
-   number, it is tinted and a source square with an up-right arrow floats just right of it (left of it
-   when that would be wholly off the pane; past a list-validation arrow; under the fill handle, which
-   wins). Hovering the square names the source; clicking it raises `UiRequest::SourceClick` for the
-   active cell, which goes to the host's `Services::source_click`, and leaves the selection as it is.
-   A Sources toggle in the sheet-tab bar, at the start of the horizontal scrollbar's share, runs the UI
+   headers), formulas and spilled values show nothing. A plain click (no modifier) on a linked number,
+   anywhere in the cell, selects it and raises `UiRequest::SourceClick` for it, which goes to the host's
+   `Services::source_click` (the host shows the source); a hyperlinked cell follows its link instead, and
+   a double-click still edits. When the active cell (only the active cell, even in a range) holds a
+   linked number, it is tinted. A Sources toggle in the sheet-tab bar, at the start of the horizontal scrollbar's share, runs the UI
    command `view.sourceInspector` (`{on?: bool}`, on by default and saved with the other UI preferences in
-   `UiState`) and turns markers, tint, square and tooltips off; the links stay in the model. It is a
+   `UiState`) and turns markers, tint, tooltips and the click off; the links stay in the model. It is a
    small labelled switch (a 32×16 pill with a white thumb, Socratics' small toggle), dropping its label
    when the bar is too short to keep the scrollbar usable. The tab viewport is sized to its tabs, so New
    Sheet follows the last tab; New Sheet is named for assistive tech. Normal view only. The ribbon also
-   gains Clear Sources, and the marker, tint, square and switch colours are theme tokens. Files: `crates/model`
+   gains Clear Sources, and the marker, tint and switch colours are theme tokens. Files: `crates/model`
    (`src/{cellmap,features,sheet}.rs`), `crates/engine` (`src/lib.rs`, the new `src/source_state.rs`,
    `src/cmd/{data,edit,format,insert,mod,sheet}.rs`, the new `src/cmd/source.rs`,
    `tests/command_sequence_fuzz.rs`), `crates/xlsx` (`src/{lib,passthrough,read,write}.rs`, the new

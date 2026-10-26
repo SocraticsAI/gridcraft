@@ -227,10 +227,13 @@ pub enum UiRequest {
     /// Start editing the active cell (F2) with optional initial text.
     EditCell(Option<String>),
     OpenUrl(String),
-    /// The user clicked a cell's source marker: the host opens the source (sheet name, A1 cell).
+    /// The user clicked a linked cell: the host shows its source (sheet name, A1 cell). `rect` is where the
+    /// cell is on screen when the UI knows it: left, top, width and height in UI points from the window's top
+    /// left, so the host can put what it shows beside the cell.
     SourceClick {
         sheet: String,
         cell: String,
+        rect: Option<[f32; 4]>,
     },
 }
 
