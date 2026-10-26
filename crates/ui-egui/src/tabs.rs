@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: the Sources switch at the start of the horizontal scrollbar's share, and New Sheet named for assistive tech. See MODIFICATIONS.md.
 //! Sheet tabs and the status bar.
 
 use std::sync::Arc;
@@ -96,6 +97,11 @@ fn tab_split_handle(app: &mut SheetApp, ui: &mut Ui, split: Rect, bar: (f32, f32
         ui.painter().circle_filled(pos2(split.center().x, split.center().y + dy), 1.0, color);
     }
 }
+
+/// The room around the Sources switch.
+const SOURCES_MARGIN: f32 = 16.0;
+/// The narrowest the grid's horizontal scrollbar gets for the Sources label's sake.
+const MIN_SCROLLBAR: f32 = 120.0;
 
 /// Draws the worksheet tab strip: navigation, scroll/reveal, rename/drag/move with optional copy, context menu, new-sheet button, split handle and grid scrollbar.
 pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
@@ -301,7 +307,9 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                     });
             });
             ui.add_space(6.0);
-            if crate::widgets::icon_button(ui, Icon::Plus, t.text_dim, app.ui.language.tr("New sheet (⇧F11)"), vec2(26.0, 26.0)).clicked() {
+            let new_sheet = crate::widgets::icon_button(ui, Icon::Plus, t.text_dim, app.ui.language.tr("New sheet (⇧F11)"), vec2(26.0, 26.0));
+            new_sheet.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, "New sheet"));
+            if new_sheet.clicked() {
                 app.run_or_alert("home.insertSheet", json!({}));
             }
             // The track ends where the grid does, so it stops under the vertical scrollbar.
@@ -309,8 +317,20 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
             let right = app.grid.rect.map_or(avail.right(), |r| r.right()).min(avail.right());
             // The handle sits at the track's left edge. With a dragged share, the room the tabs
             // don't fill stays empty before it.
-            let split_left =
+            let mut split_left =
                 share.map_or(avail.left(), |share| (bar_left + bar_width * share).min(right - SPLIT_WIDTH - MIN_TRACK).max(avail.left()));
+            // The Sources switch starts the scrollbar's share, before the handle. The scrollbar keeps
+            // a usable width: a short bar shows the switch without its label.
+            let sources_label = app.ui.language.tr("Sources");
+            ui.add_space(split_left + SOURCES_MARGIN / 2.0 - ui.cursor().left());
+            let room = right - ui.cursor().left() - SOURCES_MARGIN / 2.0 - SPLIT_WIDTH - MIN_SCROLLBAR;
+            let show_label = crate::widgets::small_switch_width(ui, sources_label, true) <= room;
+            let on = app.ui.source_inspector;
+            if crate::widgets::small_switch(ui, on, sources_label, "Source Inspector: show cell sources", show_label).clicked() {
+                app.run_or_alert("view.sourceInspector", json!({}));
+            }
+            ui.add_space(SOURCES_MARGIN / 2.0);
+            split_left = ui.cursor().left();
             let split = Rect::from_min_max(pos2(split_left, avail.top()), pos2(split_left + SPLIT_WIDTH, avail.bottom()));
             tab_split_handle(app, ui, split, (bar_left, bar_width), right, uid, &t);
             let track = Rect::from_min_max(pos2(split.right(), avail.center().y - 7.0), pos2(right, avail.center().y + 7.0));

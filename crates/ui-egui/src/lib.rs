@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, and adds the `Chrome::automate` switch. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch, cell source markers and the Source Inspector. See MODIFICATIONS.md.
 //! GridCraft's egui frontend: an Excel-style window (title bar with Quick Access Toolbar,
 //! ribbon, formula bar, grid, sheet tabs, status bar) over `gridcraft-engine`.
 //!
@@ -35,6 +35,7 @@ pub mod pivot_pane;
 pub mod printing;
 pub mod ribbon;
 pub mod selection_glide;
+pub mod source_marks;
 pub mod tabs;
 pub mod text_box;
 pub mod theme;
@@ -80,6 +81,9 @@ pub struct UiState {
     /// Enable AutoComplete for cell values (File ▸ Options ▸ Editing): typed text is completed
     /// from the one matching entry in the same column.
     pub autocomplete: bool,
+    /// Source Inspector (the Sources switch in the sheet-tab bar): markers on linked numbers, and the
+    /// tint of an active linked number. Off hides them; the links stay in the model.
+    pub source_inspector: bool,
     /// AutoSave (the title-bar switch): save saved-to-file .xlsx workbooks shortly after every
     /// change. A preference like the rest of this struct — it stays on across restarts (#1901).
     pub autosave: bool,
@@ -126,6 +130,7 @@ impl Default for UiState {
             status_bar: true,
             animations: true,
             autocomplete: true,
+            source_inspector: true,
             autosave: false,
             recent: vec![],
             keytip_invoke: None,

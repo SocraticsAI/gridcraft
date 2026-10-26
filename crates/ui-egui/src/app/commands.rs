@@ -168,6 +168,10 @@ impl SheetApp {
                 self.ui.animations = p.get("on").and_then(Json::as_bool).unwrap_or(!self.ui.animations);
                 Ok(json!({"on": self.ui.animations}))
             }
+            "view.sourceInspector" => {
+                self.ui.source_inspector = p.get("on").and_then(Json::as_bool).unwrap_or(!self.ui.source_inspector);
+                Ok(json!({"on": self.ui.source_inspector}))
+            }
             "options.autoComplete" => {
                 self.ui.autocomplete = p.get("on").and_then(Json::as_bool).unwrap_or(!self.ui.autocomplete);
                 Ok(json!({"on": self.ui.autocomplete}))
@@ -269,6 +273,13 @@ impl SheetApp {
                 UiRequest::OpenUrl(u) => {
                     if let Some(f) = &self.services.open_url {
                         f(&u);
+                    }
+                }
+                UiRequest::SourceClick { sheet, cell, rect } => {
+                    if let Some(f) = &self.services.source_click {
+                        // UI points to the canvas's CSS pixels: the UI zoom scales points on the page.
+                        let zoom = self.ui.zoom_factor();
+                        f(&sheet, &cell, rect.map(|r| r.map(|v| v * zoom)));
                     }
                 }
             }

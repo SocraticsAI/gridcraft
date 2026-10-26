@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source marker, selection tint and small switch colours. See MODIFICATIONS.md.
 //! Design tokens and fonts.
 //!
 //! Colours are our own, tuned to read like a modern desktop spreadsheet. Fonts come from egui's
@@ -82,6 +83,17 @@ pub struct Tokens {
     pub notice_warn_border: Color32,
     pub notice_info_bg: Color32,
     pub notice_info_border: Color32,
+    /// Cell source marker of a hard-coded number with a source link.
+    pub sourced_mark: Color32,
+    /// Source Inspector: the fill of an active cell holding a linked value.
+    pub source_selected_fill: Color32,
+    /// The small on/off switch (the sheet-tab bar's Sources switch): its track on and off, each
+    /// under the pointer, and its thumb.
+    pub switch_on: Color32,
+    pub switch_on_hover: Color32,
+    pub switch_off: Color32,
+    pub switch_off_hover: Color32,
+    pub switch_thumb: Color32,
     /// Text and glyphs drawn on an `accent` fill (primary buttons, switched-on toggles).
     pub on_accent: Color32,
     /// The category palette, indexed by [`Cat`]: the coloured parts of icons, gallery highlights.
@@ -222,6 +234,18 @@ impl Tokens {
             sheet_control_border: SHEET_CONTROL_BORDER,
             sheet_control_text: SHEET_CONTROL_TEXT,
             sheet_track: SHEET_TRACK,
+            // Cells stay white with black text in the dark theme (`grid_bg`, `cell_text`), so the
+            // marker and the selection tint keep their light colours: a dark blue would hide the
+            // cell's black text.
+            sourced_mark: rgb(0x274E8F),
+            source_selected_fill: rgb(0xE6EEFA),
+            // Socratics' small toggle: a slate track while on, a light grey one while off. On the
+            // dark bar the slate track would vanish: a lighter slate while on, a mid grey while off.
+            switch_on: pick(dark, rgb(0x2E343E), rgb(0x7A828D)),
+            switch_on_hover: pick(dark, rgb(0x1C2026), rgb(0x8D95A0)),
+            switch_off: pick(dark, rgb(0xE5E5E5), rgb(0x505050)),
+            switch_off_hover: pick(dark, rgb(0xD4D4D4), rgb(0x5E5E5E)),
+            switch_thumb: Color32::WHITE,
         }
     }
 

@@ -78,6 +78,9 @@ pub(crate) struct QuadrantPaint<'a> {
     pub(crate) cols: (u32, u32),
     pub(crate) cf: &'a mut CfCache,
     pub(crate) tokens: &'a Tokens,
+    /// Source Inspector: this cell (an anchor) is filled in `Tokens::source_selected_fill` over its
+    /// own fill and under its text.
+    pub(crate) tint: Option<CellRef>,
 }
 
 pub(crate) fn paint_quadrant(mut quadrant: QuadrantPaint<'_>) {
@@ -176,6 +179,9 @@ fn paint_backgrounds(q: &mut QuadrantPaint<'_>, cells: &[CellRef], merges: &[Ran
             p.rect_filled(rect.expand(0.0), 0.0, f);
         } else if in_merge(c).is_some() {
             p.rect_filled(rect.shrink(0.5), 0.0, Color32::WHITE);
+        }
+        if q.tint == Some(anchor) {
+            p.rect_filled(rect, 0.0, q.tokens.source_selected_fill);
         }
         looks.push((anchor, rect, lk, cfl));
     }

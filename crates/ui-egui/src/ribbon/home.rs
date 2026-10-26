@@ -509,6 +509,7 @@ pub(super) fn home(app: &mut SheetApp, ui: &mut Ui) {
                     ("Clear Contents", "edit.clearContents", json!({})),
                     ("Clear Comments and Notes", "edit.clearComments", json!({})),
                     ("Clear Hyperlinks", "edit.clearHyperlinks", json!({})),
+                    ("Clear Sources", "edit.clearSources", json!({})),
                 ],
             );
         });

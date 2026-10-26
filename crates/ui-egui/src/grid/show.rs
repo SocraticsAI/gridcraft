@@ -148,6 +148,8 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     // Everything up to the headers is painted in logical (left-to-right) coordinates.
     let mirror_from = painter.add(egui::Shape::Noop);
     let mut cf = CfCache::new();
+    // Source Inspector: the active linked cell's tint.
+    let tint = crate::source_marks::linked_at(app, &geo, si, sh, sel.active);
     let quads = if geo.paper.is_some() {
         crate::paper_view::paint_pages(
             crate::paper_view::PagePaintInput {
@@ -165,7 +167,7 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
         )
     } else {
         paint_panes(
-            PanesInput { app, painter: &painter, geo: &geo, workbook: &wb, sheet_index: si, sheet: sh, selection: &sel, outline, tokens: &t },
+            PanesInput { app, painter: &painter, geo: &geo, workbook: &wb, sheet_index: si, sheet: sh, selection: &sel, outline, tokens: &t, tint },
             &mut cf,
         )
     };
@@ -378,10 +380,12 @@ struct PanesInput<'a> {
     selection: &'a gridcraft_engine::Selection,
     outline: Rect,
     tokens: &'a Tokens,
+    /// Source Inspector: the active linked cell, tinted.
+    tint: Option<gridcraft_engine::core::CellRef>,
 }
 
 fn paint_panes(input: PanesInput<'_>, cf: &mut CfCache) -> Vec<PaneQuad> {
-    let PanesInput { app, painter, geo, workbook: wb, sheet_index: si, sheet: sh, selection: sel, outline, tokens: t } = input;
+    let PanesInput { app, painter, geo, workbook: wb, sheet_index: si, sheet: sh, selection: sel, outline, tokens: t, tint } = input;
     // Quadrants: (rows, cols, clip).
     let (sr0, sr1) = geo.scroll_rows(sh);
     let (sc0, sc1) = geo.scroll_cols(sh);
@@ -403,7 +407,10 @@ fn paint_panes(input: PanesInput<'_>, cf: &mut CfCache) -> Vec<PaneQuad> {
             continue;
         }
         let p = painter.with_clip_rect(*clip);
-        paint_quadrant(QuadrantPaint { painter: &p, geo, workbook: wb, sheet_index: si, sheet: sh, rows: *rows, cols: *cols, cf, tokens: t });
+        paint_quadrant(QuadrantPaint { painter: &p, geo, workbook: wb, sheet_index: si, sheet: sh, rows: *rows, cols: *cols, cf, tokens: t, tint });
+        if app.ui.source_inspector {
+            crate::source_marks::paint_quadrant(wb, &p, geo, si, sh, *rows, *cols, t);
+        }
         paint_selection(SelectionPaintInput { painter: &p, geo, sheet: sh, selection: sel, outline, tokens: t, app, rows: *rows, cols: *cols });
     }
     // Freeze lines.
@@ -721,6 +728,31 @@ pub(crate) fn paint_overlays(input: OverlayInput<'_>) {
         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), egui::Id::unique("link_tip"), egui::PopupAnchor::Pointer).show(|ui| {
             ui.label(tip);
         });
+    }
+    // Source tooltip of a marker (worked out once per document version and cell, never while
+    // painting cells).
+    let marker = match ui.ctx().pointer_hover_pos() {
+        Some(pos)
+            if app.ui.source_inspector && app.editor.is_none() && app.grid.drag == Drag::None && ui.ctx().layer_id_at(pos) == Some(ui.layer_id()) =>
+        {
+            let pos = geo.mirror_pos(pos);
+            crate::source_marks::hit(geo, wb, si, sh, pos)
+        }
+        _ => None,
+    };
+    if let (Some(c), Some((uid, revision))) = (marker, app.session.active().map(|d| (d.uid, d.revision))) {
+        let key = (uid, revision, si, c);
+        if app.grid.source_tip.as_ref().is_none_or(|(k, _)| *k != key) {
+            app.grid.source_tip = Some((key, crate::source_marks::tip(wb, si, c)));
+        }
+        if let Some((_, Some(text))) = &app.grid.source_tip {
+            egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), egui::Id::unique("source_tip"), egui::PopupAnchor::Pointer).show(|ui| {
+                ui.label(text.as_str());
+            });
+        }
+    } else {
+        // Nothing to name: the last tooltip is gone (and stays gone with the inspector off).
+        app.grid.source_tip = None;
     }
     // Trace precedents / dependents arrows.
     if let Some(trace) = &app.grid.trace

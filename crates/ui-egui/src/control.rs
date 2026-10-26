@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: lists the `view.sourceInspector` command. See MODIFICATIONS.md.
 //! Programmatic control of the running app (agents, tests, MCP).
 //!
 //! Methods (JSON lines over the host's transport, see `docs/control-protocol.md`):
@@ -195,6 +196,7 @@ pub fn handle(app: &mut SheetApp, ctx: &egui::Context, method: &str, p: &Json) -
                 ("view.darkMode", "Dark Mode", ""),
                 ("view.theme", "Display Theme", ""),
                 ("view.animations", "Animations", "{on?: bool} (toggles without it) → {on}"),
+                ("view.sourceInspector", "Source Inspector", "{on?: bool} (toggles without it) → {on}"),
                 ("options.autoComplete", "Enable AutoComplete for cell values", "{on?: bool} (toggles without it) → {on}"),
                 ("view.interfaceScale", "Interface Size", "{percent: 75–200 | \"auto\"} (100 = auto; clamped)"),
                 ("ui.dialog", "Open Dialog", ""),

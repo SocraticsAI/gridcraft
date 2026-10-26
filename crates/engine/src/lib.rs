@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and cell source links. See MODIFICATIONS.md.
 //! The GridCraft engine façade.
 //!
 //! Every user-visible action is a command with a stable id (`cell.set`, `home.bold`,
@@ -23,6 +23,7 @@ pub mod pivot_calc;
 pub mod record;
 pub mod sample;
 pub mod selection;
+pub mod source_state;
 pub mod tables;
 pub mod windows;
 
@@ -418,6 +419,14 @@ pub enum UiRequest {
     /// no edit under way, start editing the active cell with `=` and the name.
     InsertName(String),
     OpenUrl(String),
+    /// The user clicked a linked cell: the host shows its source (sheet name, A1 cell). `rect` is where the
+    /// cell is on screen when the UI knows it: left, top, width and height in UI points from the window's top
+    /// left, so the host can put what it shows beside the cell.
+    SourceClick {
+        sheet: String,
+        cell: String,
+        rect: Option<[f32; 4]>,
+    },
 }
 
 /// Width in points of one line of text drawn in a cell font, measured by a front end that has

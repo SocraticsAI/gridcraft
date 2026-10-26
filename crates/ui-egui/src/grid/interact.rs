@@ -493,6 +493,16 @@ fn handle_press(app: &mut SheetApp, input: &InteractionInput<'_>) {
             if p.x < r.left() + r.width() * 0.8 {
                 follow_link(app, &h.target);
             }
+        } else if primary_clicked
+            && !mods.any()
+            && let Some(linked) = crate::source_marks::linked_at(app, geo, wb.active_sheet(), sh, c)
+        {
+            // A plain click on a linked figure selects it and hands it to the host, which shows its source.
+            // A hyperlinked cell follows its link instead.
+            let area = sh.merge_at(linked).map_or_else(|| geo.screen_cell_rect(sh, linked), |m| geo.mirror_rect(geo.range_rect(sh, m)));
+            let rect = Some([area.left(), area.top(), area.width(), area.height()]);
+            app.session.ui_requests.push(gridcraft_engine::UiRequest::SourceClick { sheet: sh.name.clone(), cell: linked.a1(), rect });
+            app.after_engine();
         }
     }
     app.grid.drag = Drag::Select;

@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: the small on/off switch (`small_switch`). See MODIFICATIONS.md.
 //! Ribbon-style widgets: icon buttons, large buttons, split buttons, colour palettes, and the
 //! message box / toast overlays.
 
@@ -94,6 +95,51 @@ pub fn toggle_button(ui: &mut Ui, icon: Icon, on: bool, tip: &str) -> Response {
     }
     icons::paint(ui.painter(), Rect::from_center_size(rect.center(), vec2(16.0, 16.0)), icon, t.text);
     resp.on_hover_text(tip_text(ui, tip))
+}
+
+/// The small switch's track (a 16 px pill), the thumb's inset in it, and the gap after its label.
+const SWITCH_TRACK: egui::Vec2 = vec2(32.0, 16.0);
+const SWITCH_INSET: f32 = 2.0;
+const SWITCH_GAP: f32 = 6.0;
+
+/// The width `small_switch` takes for `label`, or for the switch alone.
+pub fn small_switch_width(ui: &Ui, label: &str, show_label: bool) -> f32 {
+    if !show_label {
+        return SWITCH_TRACK.x;
+    }
+    let t = Tokens::get(ui.ctx());
+    ui.painter().layout_no_wrap(label.to_string(), theme::ui_font(12.5), t.text_dim).size().x + SWITCH_GAP + SWITCH_TRACK.x
+}
+
+/// A small on/off switch: `label` (unless `show_label` is false, when room is short), then a pill track
+/// whose white thumb sits right while on. The label and the track are one target; it reads as a switch
+/// named `label` to assistive tech either way.
+pub fn small_switch(ui: &mut Ui, on: bool, label: &str, tip: &str, show_label: bool) -> Response {
+    let t = Tokens::get(ui.ctx());
+    let size = vec2(small_switch_width(ui, label, show_label), SWITCH_TRACK.y.max(theme::ui_font(12.5).size + 4.0));
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    if show_label {
+        let text = ui.painter().layout_no_wrap(label.to_string(), theme::ui_font(12.5), t.text);
+        ui.painter().galley(pos2(rect.left(), rect.center().y - text.size().y / 2.0), text, t.text);
+    }
+    let track = Rect::from_min_size(pos2(rect.right() - SWITCH_TRACK.x, rect.center().y - SWITCH_TRACK.y / 2.0), SWITCH_TRACK);
+    let fill = match (on, resp.hovered()) {
+        (true, false) => t.switch_on,
+        (true, true) => t.switch_on_hover,
+        (false, false) => t.switch_off,
+        (false, true) => t.switch_off_hover,
+    };
+    ui.painter().rect_filled(track, SWITCH_TRACK.y / 2.0, fill);
+    let radius = SWITCH_TRACK.y / 2.0 - SWITCH_INSET;
+    let x = if on { track.right() - SWITCH_INSET - radius } else { track.left() + SWITCH_INSET + radius };
+    let thumb = pos2(x, track.center().y);
+    ui.painter().circle_filled(thumb + vec2(0.0, 0.5), radius, t.shadow);
+    ui.painter().circle_filled(thumb, radius, t.switch_thumb);
+    if resp.has_focus() {
+        ui.painter().rect_stroke(track.expand(2.0), SWITCH_TRACK.y / 2.0 + 2.0, Stroke::new(1.5, t.text), StrokeKind::Outside);
+    }
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, on, label));
+    resp.on_hover_text(tr(ui, tip))
 }
 
 /// Large ribbon button: 32px icon over a one- or two-line label.
