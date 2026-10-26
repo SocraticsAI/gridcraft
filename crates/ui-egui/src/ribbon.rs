@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, and adds the `Chrome::automate` switch. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch, and Clear Sources. See MODIFICATIONS.md.
 //! Title bar (Quick Access Toolbar), ribbon tabs and ribbon groups, and keyboard shortcuts.
 
 use egui::{Align2, Color32, Key, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
@@ -1011,6 +1011,7 @@ fn home(app: &mut SheetApp, ui: &mut Ui) {
                     ("Clear Contents", "edit.clearContents", json!({})),
                     ("Clear Comments and Notes", "edit.clearComments", json!({})),
                     ("Clear Hyperlinks", "edit.clearHyperlinks", json!({})),
+                    ("Clear Sources", "edit.clearSources", json!({})),
                 ],
             );
         });
