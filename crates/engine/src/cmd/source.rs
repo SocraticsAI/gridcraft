@@ -1,7 +1,7 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
 //! Cell source links: which document each hard-coded value came from (see
 //! `gridcraft_model::SourceLink`). A host that fills cells from its documents writes the values,
-//! then their links (`source.set`); typing over a cell drops its link.
+//! then their links (`source.set`); typing over a cell drops its link. A formula cell takes none.
 
 use gridcraft_core::{CellRef, RangeRef};
 use gridcraft_model::SourceLink;
@@ -20,7 +20,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Set Cell Sources",
             [],
             None,
-            "{sheet?, range: \"A1:C3\", links: [[{file, locator} | null]] (one row per range row; null removes a link)} → {linked}",
+            "{sheet?, range: \"A1:C3\", links: [[{file, locator} | null]] (one row per range row; null removes a link; a formula cell takes none)} → {linked}",
             has_doc,
             set_links
         ),
@@ -69,6 +69,13 @@ fn set_links(s: &mut Session, p: &Json) -> Result<Json> {
             let link = link_param(v).map_err(|m| bad("source.set", format!("{}: {m}", at.a1())))?;
             parsed.push((at, link));
         }
+    }
+    // A formula has no source of its own (its inputs do), and a link on one would be read as typed
+    // over by any edit that rewrites its references, so only values take links.
+    if let Some(sh) = s.doc()?.wb.sheet(sheet)
+        && let Some((at, _)) = parsed.iter().find(|(at, l)| l.is_some() && sh.cell(*at).is_some_and(|c| c.formula.is_some()))
+    {
+        return Err(bad("source.set", format!("{}: a formula has no source of its own; link the values it uses", at.a1())));
     }
     SourceLink::share_files(parsed.iter_mut().filter_map(|(_, l)| l.as_mut()));
     let linked = parsed.iter().filter(|(_, l)| l.is_some()).count();
@@ -189,6 +196,37 @@ mod tests {
         assert!(std::sync::Arc::ptr_eq(&files[0], &files[1]), "each link holds its own copy of the file name");
         // Generous: an edit that copied 100,000 links took tens of milliseconds even in release.
         assert!(took < std::time::Duration::from_millis(250), "50 unrelated edits took {took:?}");
+    }
+
+    #[test]
+    fn a_formula_cell_cannot_be_linked() {
+        let mut s = s();
+        s.execute("range.setValues", json!({"range": "A10", "values": [[5]]})).unwrap();
+        s.execute("cell.set", json!({"cell": "A1", "input": "=A10"})).unwrap();
+        // A formula has no source of its own: its inputs do.
+        let err = s.execute("source.set", json!({"range": "A1", "links": [[link_json("page:1")]]})).unwrap_err().to_string();
+        assert!(err.contains("A1") && err.contains("formula"), "{err}");
+        assert_eq!(locator(&s, "A1"), None);
+        // Steve's case: a row inserted above the formula's input rewrites it to =A11. With no
+        // link on the formula there is none to lose.
+        s.execute("home.insertRows", json!({"rows": "5:5"})).unwrap();
+        assert_eq!(link_count(&s, "Sheet1"), 0);
+        // A batch naming a formula among numbers is refused whole and changes nothing.
+        s.execute("range.setValues", json!({"range": "B1", "values": [[1, 2]]})).unwrap();
+        let mixed = json!({"range": "A1:C1", "links": [[link_json("a"), link_json("b"), link_json("c")]]});
+        let err = s.execute("source.set", mixed).unwrap_err().to_string();
+        assert!(err.contains("A1"), "{err}");
+        assert_eq!(link_count(&s, "Sheet1"), 0);
+        // An array formula's anchor too.
+        s.execute("cell.set", json!({"cell": "E1", "input": "=SEQUENCE(2)"})).unwrap();
+        assert!(s.execute("source.set", json!({"range": "E1", "links": [[link_json("e")]]})).is_err());
+        // Removing a link from a formula cell (null) is still allowed, and the numbers link.
+        s.execute("source.set", json!({"range": "A1:C1", "links": [[null, link_json("b"), link_json("c")]]})).unwrap();
+        assert_eq!(locator(&s, "B1").as_deref(), Some("b"));
+        // A linked number later typed over with a formula loses its link (a type-over).
+        s.execute("cell.set", json!({"cell": "B1", "input": "=C1"})).unwrap();
+        assert_eq!(locator(&s, "B1"), None);
+        assert_eq!(locator(&s, "C1").as_deref(), Some("c"));
     }
 
     #[test]

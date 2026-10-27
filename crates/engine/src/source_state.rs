@@ -130,8 +130,8 @@ mod tests {
         // D2 holds no formula of its own: it is spilled by D1.
         s.execute("cell.set", json!({"cell": "D1", "input": "=B2:B3*1"})).unwrap();
         assert_eq!(s.doc().unwrap().wb.active().unwrap().value(CellRef::parse("D2").unwrap()), gridcraft_core::Value::Number(5.0));
-        // A link stored on a formula cell (not what a host writes) shows nothing either.
-        s.execute("source.set", json!({"range": "D1", "links": [[link("d1")]]})).unwrap();
+        // A formula cell takes no link.
+        assert!(s.execute("source.set", json!({"range": "D1", "links": [[link("d1")]]})).is_err());
         assert!(!state(&s, "D1"));
         assert!(!state(&s, "D2"));
         assert!(shown(&s, "D1:D3").is_empty());
