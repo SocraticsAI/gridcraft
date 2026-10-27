@@ -81,14 +81,20 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
             // follows the last tab; the Sources switch starts the scrollbar's share.
             let section = (ui.available_width() * 0.6).max(100.0);
             let sources_label = app.ui.language.tr("Sources");
-            let tabs_content: f32 = sheets
+            let tab_widths: Vec<f32> = sheets
                 .iter()
                 .map(|(_, name, _, active)| {
                     let font = if *active { theme::ui_bold(13.0) } else { theme::ui_font(13.0) };
                     (ui.painter().layout_no_wrap(name.clone(), font, t.text).size().x + 32.0).max(72.0)
                 })
-                .sum();
-            let tabs_width = tabs_content.min((section - NEW_SHEET_WIDTH).max(100.0));
+                .collect();
+            let tabs_content: f32 = tab_widths.iter().sum();
+            // The New Sheet button comes out of the tabs' share — but never so far that the active
+            // tab no longer fits, or revealing it could never show the whole name. A name that long
+            // takes the 32 px back and pushes the button into the scrollbar's share, where it sat
+            // before it moved into this section; the tabs still stop at the section's edge.
+            let active_width = sheets.iter().zip(&tab_widths).find(|((.., active), _)| *active).map_or(0.0, |(_, w)| *w);
+            let tabs_width = tabs_content.min((section - NEW_SHEET_WIDTH).max(active_width).min(section).max(100.0));
             // Reveal the selected sheet after navigation or layout changes, but
             // allow browsing other tabs without snapping back on every frame.
             let reveal_key = egui::Id::new((d.uid, d.wb.active_sheet, &sheets, tabs_width.to_bits()));

@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links (the tab viewport the Sources switch shares). See MODIFICATIONS.md.
 //! Overflowing worksheet tabs, exercised through their actual painted geometry and input.
 use egui::{Event, Modifiers, PointerButton, Rect, Shape, pos2, vec2};
 use gridcraft_engine::Session;
@@ -125,19 +126,25 @@ fn hidden_sheets_long_names_and_window_resize_keep_active_tab_visible() {
     for sheet in 1..10 {
         h.state_mut().run("sheet.hide", json!({"sheet":sheet})).unwrap();
     }
-    let name = "Quarterly results and forecasts";
-    h.state_mut().run("sheet.rename", json!({"sheet":29,"name":name})).unwrap();
-    h.state_mut().run("sheet.activate", json!({"sheet":29})).unwrap();
-    h.run_steps(20);
-    assert_visible(&h, name);
-    // Narrow, but still wide enough for the long tab next to the arrows and the All Sheets button.
-    h.set_size(vec2(560.0, 120.0));
-    h.run_steps(20);
-    assert_visible(&h, name);
-    h.set_size(vec2(1000.0, 120.0));
-    h.run_steps(20);
-    assert_visible(&h, name);
-    assert_eq!(h.state().session.doc().unwrap().wb.active_sheet, 29);
+    // Two names at Excel's 31-character limit. The second is near the widest that limit allows, so
+    // the tab needs more than the share left over once the New Sheet button is taken out of the tab
+    // strip: the strip has to give those pixels back rather than clip the active tab. How wide a
+    // name of a given length paints depends on the platform's fonts, so the narrow case here fails
+    // with one name and not the other depending on where it runs.
+    for name in ["Quarterly results and forecasts", "CAPITAL ALLOTMENT LISTING FY24A"] {
+        h.state_mut().run("sheet.rename", json!({"sheet":29,"name":name})).unwrap();
+        h.state_mut().run("sheet.activate", json!({"sheet":29})).unwrap();
+        h.run_steps(20);
+        assert_visible(&h, name);
+        // Narrow, but still wide enough for the long tab next to the arrows and the All Sheets button.
+        h.set_size(vec2(560.0, 120.0));
+        h.run_steps(20);
+        assert_visible(&h, name);
+        h.set_size(vec2(1000.0, 120.0));
+        h.run_steps(20);
+        assert_visible(&h, name);
+        assert_eq!(h.state().session.doc().unwrap().wb.active_sheet, 29);
+    }
 }
 
 #[test]
