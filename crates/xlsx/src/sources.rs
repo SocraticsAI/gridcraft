@@ -34,6 +34,16 @@ const ITEM_ID: &str = "{6F1C5E2A-3B7D-4C8E-9A0F-5D2B1E4C7A90}";
 /// Most links read from one file.
 const MAX_LINKS: usize = 2_000_000;
 
+/// The most links [`read`] takes in (tests lower it).
+#[cfg(not(test))]
+fn max_links() -> usize {
+    MAX_LINKS
+}
+#[cfg(test)]
+fn max_links() -> usize {
+    tests::LIMIT.with(std::cell::Cell::get)
+}
+
 /// Writes the links of every sheet, if any sheet has one.
 pub fn write(wb: &Workbook, out: &mut Out, wb_rels: &mut Rels) {
     if wb.sheets.iter().all(|s| s.sources.is_empty()) {
@@ -103,6 +113,7 @@ pub fn is_sources_part(cx: &Ctx<'_>, part: &str) -> bool {
 pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
     let mut count = 0usize;
     let mut outside = 0usize;
+    let (max, mut excess) = (max_links(), 0usize);
     for r in wb_rels.iter().filter(|r| !r.external && r.kind.eq_ignore_ascii_case("customXml")) {
         if is_sources_part(cx, &r.target) {
             continue;
@@ -141,9 +152,11 @@ pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
                 }
                 let file: Arc<str> = file.into();
                 for l in fe.kids("link") {
-                    if count >= MAX_LINKS {
-                        cx.warn(format!("only the first {MAX_LINKS} cell source links were read"));
-                        return;
+                    // Past the limit, links are counted, not kept; the parts are still taken in,
+                    // so the pass-through doesn't keep them and a save write them twice.
+                    if count >= max {
+                        excess += 1;
+                        continue;
                     }
                     let Some(cell) = l.attr("ref").and_then(CellRef::parse).filter(CellRef::is_valid) else { continue };
                     let Some(locator) = l.attr("locator").map(decode_xstring).filter(|s| !s.trim().is_empty()) else { continue };
@@ -152,6 +165,9 @@ pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
                 }
             }
         }
+    }
+    if excess > 0 {
+        cx.warn(format!("only the first {max} cell source links were read; {excess} more were dropped"));
     }
     if outside > 0 {
         cx.warn(format!("{outside} cell source links were dropped: their file is not a relative path inside the folder"));
@@ -167,6 +183,11 @@ mod tests {
     use gridcraft_model::{Sheet, SourceLink, Workbook};
 
     use crate::{read_xlsx, write_xlsx};
+
+    thread_local! {
+        /// The most links [`super::read`] takes in, so a test can reach the limit.
+        pub static LIMIT: std::cell::Cell<usize> = const { std::cell::Cell::new(super::MAX_LINKS) };
+    }
 
     fn link(locator: &str) -> SourceLink {
         SourceLink { file: "Cash/Statement.pdf".into(), locator: locator.into() }
@@ -323,6 +344,32 @@ mod tests {
         assert_eq!(s.sources.get(&CellRef::new(3, 3)).map(|l| &*l.file), Some("Cash/ok.pdf"));
         let n = bad.len() * 2;
         assert!(report.warnings.iter().any(|w| w.contains(&format!("{n} cell source links"))), "{:?}", report.warnings);
+    }
+
+    #[test]
+    fn links_past_the_limit_are_dropped_and_every_part_is_still_taken_in() {
+        let rel = |id: u32| {
+            format!(
+                r#"<Relationship Id="rId{id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/item{id}.xml"/>"#
+            )
+        };
+        let part = |cells: &[&str]| {
+            let links: String = cells.iter().map(|c| format!(r#"<link ref="{c}" locator="l"/>"#)).collect();
+            format!(
+                r#"<?xml version="1.0"?><sources xmlns="urn:socratics:sources:2"><sheet name="Data"><file path="f.pdf">{links}</file></sheet></sources>"#
+            )
+        };
+        let (one, two) = (part(&["A1", "A2", "A3"]), part(&["B1", "B2"]));
+        let bytes = crate::tests::minimal("<sheetData/>", &[("customXml/item1.xml", &one), ("customXml/item2.xml", &two)], &(rel(1) + &rel(2)), "");
+        LIMIT.with(|l| l.set(2));
+        let read = read_xlsx(&bytes);
+        LIMIT.with(|l| l.set(super::MAX_LINKS));
+        let (wb, report) = read.unwrap();
+        assert_eq!(wb.sheets[0].sources.len(), 2);
+        assert!(report.warnings.iter().any(|w| w.contains("3 more were dropped")), "{:?}", report.warnings);
+        // Neither part is kept as unmodelled custom XML as well, so a save writes the links once.
+        let saved = write_xlsx(&wb).unwrap();
+        assert_eq!(sources_parts(&saved).len(), 1);
     }
 
     #[test]
