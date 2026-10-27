@@ -96,11 +96,13 @@ pub fn is_sources_part(cx: &Ctx<'_>, part: &str) -> bool {
 
 /// Reads the links of every source-links part related from the workbook into its sheets, by
 /// sheet name. Unknown sheets, files without a path, bad references and links without a locator
-/// are skipped.
+/// are skipped; links whose file is not a relative path inside the folder
+/// ([`SourceLink::is_relative_path`]) are dropped with a warning that counts them.
 /// Each part is read once, under the package's own per-part and total limits, and recorded in
 /// `cx.sources_parts`.
 pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
     let mut count = 0usize;
+    let mut outside = 0usize;
     for r in wb_rels.iter().filter(|r| !r.external && r.kind.eq_ignore_ascii_case("customXml")) {
         if is_sources_part(cx, &r.target) {
             continue;
@@ -131,6 +133,12 @@ pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
             let sheet = Arc::make_mut(sheet).sources_mut();
             for fe in se.kids("file") {
                 let Some(file) = fe.attr("path").map(decode_xstring).filter(|f| !f.trim().is_empty()) else { continue };
+                // A crafted file mustn't plant a link to a path outside the folder (an absolute
+                // path, a share, a URL, a `..` escape): it is dropped, and counted.
+                if !SourceLink::is_relative_path(&file) {
+                    outside += fe.kids("link").count();
+                    continue;
+                }
                 let file: Arc<str> = file.into();
                 for l in fe.kids("link") {
                     if count >= MAX_LINKS {
@@ -144,6 +152,9 @@ pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
                 }
             }
         }
+    }
+    if outside > 0 {
+        cx.warn(format!("{outside} cell source links were dropped: their file is not a relative path inside the folder"));
     }
 }
 
@@ -213,8 +224,7 @@ mod tests {
         let mut wb = Workbook::new();
         let s0 = wb.sheet_mut(0).unwrap();
         s0.sources_mut().insert(CellRef::new(0, 0), SourceLink { file: "f.pdf".into(), locator: "line:2\u{0C}x".into() });
-        s0.sources_mut()
-            .insert(CellRef::new(1, 0), SourceLink { file: "a\u{01}b.pdf".into(), locator: "x\u{01}y\u{0B}z\u{7F}\u{1F}\u{FFFE}".into() });
+        s0.sources_mut().insert(CellRef::new(1, 0), SourceLink { file: "a b.pdf".into(), locator: "x\u{01}y\u{0B}z\u{7F}\u{1F}\u{FFFE}".into() });
         // Text that already looks like Excel's `_xHHHH_` escape stays literal.
         s0.sources_mut().insert(CellRef::new(2, 0), SourceLink { file: "_x0041_.pdf".into(), locator: "_x005F_ and _x000C_".into() });
         let bytes = write_xlsx(&wb).unwrap();
@@ -289,6 +299,33 @@ mod tests {
     }
 
     #[test]
+    fn links_naming_a_path_outside_the_folder_are_dropped_and_counted() {
+        let rel = r#"<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/item1.xml"/>"#;
+        let bad = [
+            "\\\\attacker\\share\\x.pdf",
+            "/etc/passwd",
+            "C:/x.pdf",
+            "../x.pdf",
+            "a/../../x.pdf",
+            "file:///x.pdf",
+            "https://e.com/x.pdf",
+            "a\\b.pdf",
+            "_x0000_x.pdf",
+        ];
+        let mut part = String::from(r#"<?xml version="1.0"?><sources xmlns="urn:socratics:sources:2"><sheet name="Data">"#);
+        for (i, file) in bad.iter().enumerate() {
+            part.push_str(&format!(r#"<file path="{file}"><link ref="A{}" locator="l"/><link ref="B{}" locator="l"/></file>"#, i + 1, i + 1));
+        }
+        part.push_str(r#"<file path="Cash/ok.pdf"><link ref="D4" locator="kept"/></file></sheet></sources>"#);
+        let (wb, report) = read_xlsx(&crate::tests::minimal("<sheetData/>", &[("customXml/item1.xml", &part)], rel, "")).unwrap();
+        let s = &wb.sheets[0];
+        assert_eq!(s.sources.len(), 1, "{:?}", s.sources);
+        assert_eq!(s.sources.get(&CellRef::new(3, 3)).map(|l| &*l.file), Some("Cash/ok.pdf"));
+        let n = bad.len() * 2;
+        assert!(report.warnings.iter().any(|w| w.contains(&format!("{n} cell source links"))), "{:?}", report.warnings);
+    }
+
+    #[test]
     fn a_workbook_without_links_writes_no_sources_part() {
         let bytes = write_xlsx(&Workbook::new()).unwrap();
         assert!(sources_parts(&bytes).is_empty());
@@ -311,7 +348,7 @@ mod tests {
         let mut wb = Workbook::new();
         wb.sheets.push(Arc::new(Sheet::new("Q3 \"Café\" & <Co>")));
         let a = "a & b <c> \"d\".pdf";
-        let b = "Café/_x0041_\u{01}.xlsx";
+        let b = "Café/_x0041_.xlsx";
         let mk = |file: &str, locator: &str| SourceLink { file: file.into(), locator: locator.into() };
         let s0 = wb.sheet_mut(0).unwrap();
         s0.sources_mut().insert(CellRef::new(0, 0), mk(a, "page:1 & \"net\""));

@@ -20,7 +20,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Set Cell Sources",
             [],
             None,
-            "{sheet?, range: \"A1:C3\", links: [[{file, locator} | null]] (one row per range row; null removes a link; a formula cell takes none)} → {linked}",
+            "{sheet?, range: \"A1:C3\", links: [[{file, locator} | null]] (one row per range row; null removes a link; file is a relative path; a formula cell takes none)} → {linked}",
             has_doc,
             set_links
         ),
@@ -29,13 +29,17 @@ pub fn specs() -> Vec<CommandSpec> {
     ]
 }
 
-/// One `links` entry: an object with a non-blank `file` and `locator`, or null for no link.
+/// One `links` entry: an object with a non-blank `locator` and a `file` that is a relative path
+/// inside the folder ([`SourceLink::is_relative_path`]), or null for no link.
 fn link_param(v: &Json) -> std::result::Result<Option<SourceLink>, String> {
     match v {
         Json::Null => Ok(None),
         Json::Object(o) => {
             let text = |k: &str| o.get(k).and_then(Json::as_str).map(str::trim).filter(|t| !t.is_empty()).map(str::to_string);
             let file = text("file").ok_or("a link needs a `file`")?;
+            if !SourceLink::is_relative_path(&file) {
+                return Err("a link's `file` must be a relative path inside the folder (no absolute path, drive, share, scheme, `.` or `..` segment, backslash or control character)".into());
+            }
             let locator = text("locator").ok_or("a link needs a `locator`")?;
             Ok(Some(SourceLink { file: file.into(), locator }))
         }
@@ -227,6 +231,34 @@ mod tests {
         s.execute("cell.set", json!({"cell": "B1", "input": "=C1"})).unwrap();
         assert_eq!(locator(&s, "B1"), None);
         assert_eq!(locator(&s, "C1").as_deref(), Some("c"));
+    }
+
+    #[test]
+    fn a_link_must_name_a_relative_path_inside_the_folder() {
+        let mut s = s();
+        s.execute("range.setValues", json!({"range": "A1", "values": [[1, 2]]})).unwrap();
+        for file in [
+            "\\\\attacker\\share\\x.pdf",
+            "//attacker/share/x.pdf",
+            "/etc/passwd",
+            "C:/Windows/win.ini",
+            "../x.pdf",
+            "Cash/../../x.pdf",
+            "Cash\\x.pdf",
+            "file:///etc/passwd",
+            "https://example.com/x.pdf",
+            "a\u{0}b.pdf",
+        ] {
+            let r = s.execute(
+                "source.set",
+                json!({"range": "A1:B1", "links": [[{"file": "Cash/Statement.pdf", "locator": "page:1"}, {"file": file, "locator": "page:1"}]]}),
+            );
+            let err = r.expect_err(file).to_string();
+            assert!(err.contains("B1") && err.contains("relative path"), "{file}: {err}");
+            assert_eq!(link_count(&s, "Sheet1"), 0, "{file}: a refused batch changes nothing");
+        }
+        s.execute("source.set", json!({"range": "A1", "links": [[{"file": "Cash/Bank Statement.pdf", "locator": "page:1"}]]})).unwrap();
+        assert_eq!(locator(&s, "A1").as_deref(), Some("page:1"));
     }
 
     #[test]
