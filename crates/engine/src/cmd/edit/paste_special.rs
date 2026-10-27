@@ -135,7 +135,7 @@ pub(super) fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
             moved_pictures = source.cell_pictures.iter().filter(|(c, _)| src.contains(**c)).map(|(c, p)| (*c, p.clone())).collect();
             // Links move with their values: none is left on the cut cells.
             moved_sources = source.sources.iter().filter(|(c, _)| src.contains(**c)).map(|(c, l)| (*c, l.clone())).collect();
-            source.sources.retain(|c, _| !src.contains(*c));
+            source.remove_sources_in(src, |_| true);
             let taken = source.take_cells(src);
             // Notes, hyperlinks and merged areas sit beside the cells, and a cut takes them
             // with the block: the destination is written from the clipboard snapshot taken
@@ -301,10 +301,10 @@ pub(super) fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
                 let sh = cx.sheet_mut(dest_sheet)?;
                 match kept {
                     Some(l) => {
-                        sh.sources.insert(dest, l);
+                        sh.sources_mut().insert(dest, l);
                     }
                     None => {
-                        sh.sources.remove(&dest);
+                        sh.remove_sources_in(RangeRef::cell(dest), |_| true);
                     }
                 }
                 // The pasted link is new at this address, whatever it replaced, so the

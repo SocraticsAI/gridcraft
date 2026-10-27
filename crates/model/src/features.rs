@@ -1,4 +1,3 @@
-// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Sheet features beyond cells: tables, conditional formatting, data validation, comments,
 //! hyperlinks, charts, images, autofilter, print settings.
 
@@ -370,22 +369,6 @@ pub struct Hyperlink {
     /// the file, not a `location`. A bare file name can't be told from a defined name by its text.
     #[serde(default)]
     pub external: bool,
-}
-
-/// Where a hard-coded value came from: a document and the place in it. A formula has none of its
-/// own. Moves with its cell like a note; typing over the cell drops it. Unknown fields are ignored
-/// on load.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SourceLink {
-    /// The source document, relative to the open folder.
-    ///
-    /// Untrusted when it comes from a file: a workbook from anywhere can name an absolute path, a
-    /// UNC share or a `..` escape, and nothing here validates or rejects one. A host that opens or
-    /// fetches what a link names must resolve it against its own root and refuse anything that
-    /// leaves it, exactly as it would a path typed by a stranger.
-    pub file: String,
-    /// Where in the document: `Sheet!A1`, `page:N`, `slide:N`, `line:N` or `document` (the whole file).
-    pub locator: String,
 }
 
 // ---------------------------------------------------------------- drawing objects

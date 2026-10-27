@@ -647,7 +647,7 @@ fn merge(s: &mut Session, p: &Json, how: &str) -> Result<Json> {
                     // cells' source links go with their values, each row's anchor keeps its own.
                     // One pass over the links, not one per row.
                     if r.width() > 1 {
-                        sh.sources.retain(|c, _| !r.contains(*c) || c.col == r.start.col);
+                        sh.remove_sources_in(*r, |c| c.col != r.start.col);
                     }
                     for row in r.start.row..=r.end.row {
                         let m = RangeRef::new(CellRef::new(row, r.start.col), CellRef::new(row, r.end.col));
@@ -673,7 +673,7 @@ fn merge(s: &mut Session, p: &Json, how: &str) -> Result<Json> {
                     // Only the upper-left value survives (Excel warns about this).
                     if r.count() <= 1_000_000 {
                         // … and only its source link: the emptied cells lose theirs.
-                        sh.sources.retain(|c, _| !r.contains(*c) || *c == r.start);
+                        sh.remove_sources_in(*r, |c| c != r.start);
                         let others: Vec<CellRef> = sh.cells.iter_range(*r).map(|(c, _)| c).filter(|c| *c != r.start).collect();
                         for c in others {
                             if let Some(mut cell) = sh.cells.get(c).cloned() {

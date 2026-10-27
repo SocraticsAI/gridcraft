@@ -234,11 +234,13 @@ fn do_sort(s: &mut Session, sheet: usize, r: RangeRef, header: bool, keys: Vec<S
             shm.hyperlinks.insert(at, h);
         }
         shm.cell_pictures.extend(pictures);
-        shm.sources.retain(|c, _| !body.contains(*c));
+        shm.remove_sources_in(body, |_| true);
         // The sort gives each link its row's new address, so the commit mustn't read the value
         // that moved in under it as the cell having been typed over.
         let moved_sources: Vec<CellRef> = sources.iter().map(|(c, _)| *c).collect();
-        shm.sources.extend(sources);
+        if !sources.is_empty() {
+            shm.sources_mut().extend(sources);
+        }
         for (i, h) in heights.into_iter().enumerate() {
             let row = body.start.row + i as u32;
             match h {

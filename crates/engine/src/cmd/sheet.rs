@@ -125,20 +125,23 @@ fn shift_anchor(sh: &Sheet, a: Anchor, corner: (u32, u32, f32, f32), axis: Axis,
 /// typed-over check off those addresses. A link whose address `map_cell` leaves alone isn't
 /// reported, so an edit that shifts part of a sheet can still drop a link it typed over elsewhere.
 pub(crate) fn remap_sources(sh: &mut Sheet, map_cell: &impl Fn(CellRef) -> Option<CellRef>) -> Vec<CellRef> {
-    if sh.sources.is_empty() {
+    // Nothing to copy when every link stays where it is.
+    if sh.sources.keys().all(|c| map_cell(*c) == Some(*c)) {
         return Vec::new();
     }
     let mut moved = Vec::new();
-    sh.sources = std::mem::take(&mut sh.sources)
-        .into_iter()
+    let links = sh
+        .sources
+        .iter()
         .filter_map(|(c, v)| {
-            let dest = map_cell(c).filter(CellRef::is_valid)?;
-            if dest != c {
+            let dest = map_cell(*c).filter(CellRef::is_valid)?;
+            if dest != *c {
                 moved.push(dest);
             }
-            Some((dest, v))
+            Some((dest, v.clone()))
         })
         .collect();
+    sh.sources = std::sync::Arc::new(links);
     moved
 }
 

@@ -79,7 +79,7 @@ fn slide_together(wb: &gridcraft_model::Workbook, sheet: usize, areas: &[RangeRe
     dst.spill.retain(|c, _| !block.contains(*c));
     dst.spill_ranges.retain(|c, _| !block.contains(*c));
     dst.comments.retain(|c, _| !block.contains(*c));
-    dst.sources.retain(|c, _| !block.contains(*c));
+    dst.remove_sources_in(block, |_| true);
     dst.merges.retain(|m| !m.intersects(&block));
     if across {
         dst.cols.retain(|c, _| !(block.start.col..=block.end.col).contains(c));
@@ -103,10 +103,9 @@ fn slide_together(wb: &gridcraft_model::Workbook, sheet: usize, areas: &[RangeRe
                 dst.comments.insert(to, comment.clone());
             }
         }
-        for (c, l) in src.sources.iter().filter(|(c, _)| a.contains(**c)) {
-            if let Some(to) = c.offset(dr, dc) {
-                dst.sources.insert(to, l.clone());
-            }
+        let links: Vec<_> = src.sources.iter().filter(|(c, _)| a.contains(**c)).filter_map(|(c, l)| Some((c.offset(dr, dc)?, l.clone()))).collect();
+        if !links.is_empty() {
+            dst.sources_mut().extend(links);
         }
         for m in src.merges.iter().filter(|m| a.contains_range(m)) {
             if let (Some(s), Some(e)) = (m.start.offset(dr, dc), m.end.offset(dr, dc)) {

@@ -101,10 +101,12 @@ pub(super) fn remove_duplicates(s: &mut Session, p: &Json) -> Result<Json> {
         // The compared rows lose their links; the kept rows' links land where those rows go.
         if start <= r.end.row {
             let block = RangeRef::new(CellRef::new(start, r.start.col), r.end);
-            shm.sources.retain(|c, _| !block.contains(*c));
+            shm.remove_sources_in(block, |_| true);
         }
         let moved_sources: Vec<CellRef> = sources.iter().map(|(c, _)| *c).collect();
-        shm.sources.extend(sources);
+        if !sources.is_empty() {
+            shm.sources_mut().extend(sources);
+        }
         for (at, cm) in notes {
             shm.comments.insert(at, cm);
         }

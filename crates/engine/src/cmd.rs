@@ -455,8 +455,9 @@ fn drop_overwritten_sources(old: &Workbook, new: &mut Workbook, changed: &[Key],
             continue;
         }
         if let Some(shm) = new.sheet_mut(i) {
+            let links = shm.sources_mut();
             for c in &stale {
-                shm.sources.remove(c);
+                links.remove(c);
             }
         }
     }
@@ -490,7 +491,7 @@ fn check_protection(old: &Workbook, new: &Workbook, unlocked: &[(String, String)
         // as typing in it is. They'd otherwise go through, since they leave the content alone.
         // Edits that only *move* links (row and column inserts and deletes protection allows) set
         // `protection_checked` and don't reach here.
-        if sh.sources != after.sources {
+        if !std::sync::Arc::ptr_eq(&sh.sources, &after.sources) && sh.sources != after.sources {
             let changed = sh.sources.iter().filter(|(c, l)| after.sources.get(c) != Some(l)).map(|(c, _)| *c);
             for c in changed.chain(after.sources.keys().copied().filter(|c| !sh.sources.contains_key(c))) {
                 if old.styles.get(sh.style_id(c)).protection.locked

@@ -235,7 +235,7 @@ fn clear(s: &mut Session, p: &Json, what: &str) -> Result<Json> {
             // Source links go with the contents (or alone): over the whole range, since a link
             // can sit on a cell with no value, outside the used range.
             if matches!(what, "all" | "contents" | "sources") {
-                cx.sheet_mut(sheet)?.sources.retain(|c, _| !r.contains(*c));
+                cx.sheet_mut(sheet)?.remove_sources_in(*r, |_| true);
             }
             if what == "sources" {
                 continue;
