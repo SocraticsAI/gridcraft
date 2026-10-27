@@ -3,7 +3,7 @@
 //! `gridcraft_model::SourceLink`). A host that fills cells from its documents writes the values,
 //! then their links (`source.set`); typing over a cell drops its link.
 
-use gridcraft_core::CellRef;
+use gridcraft_core::{CellRef, RangeRef};
 use gridcraft_model::SourceLink;
 use serde_json::{Value as Json, json};
 
@@ -37,7 +37,7 @@ fn link_param(v: &Json) -> std::result::Result<Option<SourceLink>, String> {
             let text = |k: &str| o.get(k).and_then(Json::as_str).map(str::trim).filter(|t| !t.is_empty()).map(str::to_string);
             let file = text("file").ok_or("a link needs a `file`")?;
             let locator = text("locator").ok_or("a link needs a `locator`")?;
-            Ok(Some(SourceLink { file, locator }))
+            Ok(Some(SourceLink { file: file.into(), locator }))
         }
         _ => Err("each link is an object or null".into()),
     }
@@ -70,6 +70,7 @@ fn set_links(s: &mut Session, p: &Json) -> Result<Json> {
             parsed.push((at, link));
         }
     }
+    SourceLink::share_files(parsed.iter_mut().filter_map(|(_, l)| l.as_mut()));
     let linked = parsed.iter().filter(|(_, l)| l.is_some()).count();
     edit(s, |cx| {
         let mut set = Vec::new();
@@ -77,11 +78,11 @@ fn set_links(s: &mut Session, p: &Json) -> Result<Json> {
         for (at, link) in parsed {
             match link {
                 Some(l) => {
-                    sh.sources.insert(at, l);
+                    sh.sources_mut().insert(at, l);
                     set.push(at);
                 }
                 None => {
-                    sh.sources.remove(&at);
+                    sh.remove_sources_in(RangeRef::cell(at), |_| true);
                 }
             }
         }
@@ -110,9 +111,8 @@ fn clear_links(s: &mut Session, p: &Json) -> Result<Json> {
     let ranges = target_ranges(s, p)?;
     edit(s, |cx| {
         let sh = cx.sheet_mut(sheet)?;
-        let before = sh.sources.len();
-        sh.sources.retain(|c, _| !ranges.iter().any(|r| r.contains(*c)));
-        Ok(json!({"cleared": before - sh.sources.len()}))
+        let cleared: usize = ranges.iter().map(|r| sh.remove_sources_in(*r, |_| true)).sum();
+        Ok(json!({"cleared": cleared}))
     })
 }
 
@@ -151,6 +151,44 @@ mod tests {
     fn link_count(s: &Session, sheet: &str) -> usize {
         let wb = &s.doc().unwrap().wb;
         wb.sheet(wb.sheet_index(sheet).unwrap()).unwrap().sources.len()
+    }
+
+    /// 100,000 links on `A1:J10000`, every one to the same document, each on its own number.
+    fn many_links(s: &mut Session) {
+        let values: Vec<Vec<f64>> = (0..10_000u32).map(|r| (0..10).map(|c| f64::from(r * 10 + c)).collect()).collect();
+        s.execute("range.setValues", json!({"range": "A1:J10000", "values": values})).unwrap();
+        let links: Vec<Vec<Json>> = (0..10_000u32)
+            .map(|r| {
+                (0..10).map(|c| json!({"file": "Cash/Bank Statement September 2019.xlsx", "locator": format!("Sheet1!R{}", r * 10 + c)})).collect()
+            })
+            .collect();
+        s.execute("source.set", json!({"range": "A1:J10000", "links": links})).unwrap();
+        assert_eq!(link_count(s, "Sheet1"), 100_000);
+    }
+
+    #[test]
+    fn an_unrelated_edit_does_not_copy_the_links() {
+        let mut s = s();
+        many_links(&mut s);
+        let undo_before = s.doc().unwrap().undo.len();
+        #[allow(clippy::disallowed_methods)]
+        let t0 = std::time::Instant::now();
+        for i in 0..50 {
+            s.execute("cell.set", json!({"cell": "Z1", "input": format!("{i}")})).unwrap();
+        }
+        #[allow(clippy::disallowed_methods)]
+        let took = t0.elapsed();
+        let d = s.doc().unwrap();
+        // Every snapshot an unrelated edit left on the undo stack shares the one map of links.
+        let now = &d.wb.sheets[0].sources;
+        for entry in &d.undo[undo_before..] {
+            assert!(std::sync::Arc::ptr_eq(&entry.wb.sheets[0].sources, now), "an undo snapshot holds its own copy of the links");
+        }
+        // Links to one document share its name too.
+        let files: Vec<_> = now.values().take(2).map(|l| l.file.clone()).collect();
+        assert!(std::sync::Arc::ptr_eq(&files[0], &files[1]), "each link holds its own copy of the file name");
+        // Generous: an edit that copied 100,000 links took tens of milliseconds even in release.
+        assert!(took < std::time::Duration::from_millis(250), "50 unrelated edits took {took:?}");
     }
 
     #[test]

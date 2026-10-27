@@ -85,9 +85,10 @@ pub struct Sheet {
     pub autofilter: Option<AutoFilter>,
     #[serde(with = "crate::cellmap")]
     pub comments: BTreeMap<CellRef, Comment>,
-    /// Source links of hard-coded values, by cell ([`SourceLink`]).
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty", with = "crate::cellmap")]
-    pub sources: BTreeMap<CellRef, SourceLink>,
+    /// Source links of hard-coded values, by cell ([`crate::SourceLink`]). Shared with undo
+    /// snapshots until a link changes: change them through [`Sheet::sources_mut`].
+    #[serde(default, skip_serializing_if = "crate::source_link::no_links", with = "crate::source_link::links_serde")]
+    pub sources: Arc<crate::SourceLinks>,
     #[serde(with = "crate::cellmap")]
     pub hyperlinks: BTreeMap<CellRef, Hyperlink>,
     pub charts: Vec<Chart>,
@@ -154,7 +155,7 @@ impl Sheet {
             tables: vec![],
             autofilter: None,
             comments: BTreeMap::new(),
-            sources: BTreeMap::new(),
+            sources: Arc::default(),
             hyperlinks: BTreeMap::new(),
             charts: vec![],
             images: vec![],

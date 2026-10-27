@@ -361,11 +361,13 @@ fn do_sort(s: &mut Session, r: RangeRef, header: bool, keys: Vec<SortKey>, by_co
             }
         }
         shm.cell_pictures.extend(pictures);
-        shm.sources.retain(|c, _| !body.contains(*c));
+        shm.remove_sources_in(body, |_| true);
         // The sort gives each link its row's new address, so the commit mustn't read the value
         // that moved in under it as the cell having been typed over.
         let moved_sources: Vec<CellRef> = links.iter().map(|(c, _)| *c).collect();
-        shm.sources.extend(links);
+        if !links.is_empty() {
+            shm.sources_mut().extend(links);
+        }
         for (i, h) in heights.into_iter().enumerate() {
             let row = body.start.row + i as u32;
             match h {
@@ -815,10 +817,12 @@ fn remove_duplicates(s: &mut Session, p: &Json) -> Result<Json> {
         // The compared rows lose their links; the kept rows' links land where those rows go.
         if start <= r.end.row {
             let block = RangeRef::new(CellRef::new(start, r.start.col), r.end);
-            shm.sources.retain(|c, _| !block.contains(*c));
+            shm.remove_sources_in(block, |_| true);
         }
         let moved_sources: Vec<CellRef> = links.iter().map(|(c, _)| *c).collect();
-        shm.sources.extend(links);
+        if !links.is_empty() {
+            shm.sources_mut().extend(links);
+        }
         for c in RangeRef::new(CellRef::new(start, r.start.col), r.end).iter() {
             cx.changed.push((sheet, c));
         }

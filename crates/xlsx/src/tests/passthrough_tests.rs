@@ -829,7 +829,7 @@ fn file_version_and_calc_features_survive_a_save() {
 fn source_links_are_modelled_while_other_custom_xml_is_still_kept_once() {
     let (mut wb, _) = read_xlsx(&rich_package()).unwrap();
     let link = gridcraft_model::SourceLink { file: "Cash/Statement.pdf".into(), locator: "page:3".into() };
-    Arc::make_mut(&mut wb.sheets[0]).sources.insert(gridcraft_core::CellRef::new(2, 2), link);
+    Arc::make_mut(&mut wb.sheets[0]).sources_mut().insert(gridcraft_core::CellRef::new(2, 2), link);
     let ours = |u: &Unpacked| -> Vec<String> {
         u.parts
             .iter()

@@ -46,8 +46,8 @@ pub fn write(wb: &Workbook, out: &mut Out, wb_rels: &mut Rels) {
         let _ = write!(x, "<sheet name=\"{}\">", esc_attr(&name));
         // One group per document.
         let mut groups: BTreeMap<&str, Vec<(&CellRef, &SourceLink)>> = BTreeMap::new();
-        for (c, l) in &sh.sources {
-            groups.entry(l.file.as_str()).or_default().push((c, l));
+        for (c, l) in sh.sources.iter() {
+            groups.entry(&*l.file).or_default().push((c, l));
         }
         for (file, links) in groups {
             let _ = write!(x, "<file path=\"{}\">", attr(file));
@@ -128,9 +128,10 @@ pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
         for se in root.kids("sheet") {
             let Some(si) = se.attr("name").and_then(|n| wb.sheet_index(n)) else { continue };
             let Some(sheet) = wb.sheets.get_mut(si) else { continue };
-            let sheet = Arc::make_mut(sheet);
+            let sheet = Arc::make_mut(sheet).sources_mut();
             for fe in se.kids("file") {
                 let Some(file) = fe.attr("path").map(decode_xstring).filter(|f| !f.trim().is_empty()) else { continue };
+                let file: Arc<str> = file.into();
                 for l in fe.kids("link") {
                     if count >= MAX_LINKS {
                         cx.warn(format!("only the first {MAX_LINKS} cell source links were read"));
@@ -138,7 +139,7 @@ pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
                     }
                     let Some(cell) = l.attr("ref").and_then(CellRef::parse).filter(CellRef::is_valid) else { continue };
                     let Some(locator) = l.attr("locator").map(decode_xstring).filter(|s| !s.trim().is_empty()) else { continue };
-                    sheet.sources.insert(cell, SourceLink { file: file.clone(), locator });
+                    sheet.insert(cell, SourceLink { file: file.clone(), locator });
                     count += 1;
                 }
             }
@@ -192,9 +193,9 @@ mod tests {
         wb.sheets.push(Arc::new(Sheet::new("Q3 Model")));
         let s0 = wb.sheet_mut(0).unwrap();
         s0.set_value(CellRef::new(1, 1), 1_318_609.0.into());
-        s0.sources.insert(CellRef::new(1, 1), link("page:3"));
-        s0.sources.insert(CellRef::new(2, 1), SourceLink { file: "a & b <c>.xlsx".into(), locator: "GL Detail!C16102 \"x\"".into() });
-        wb.sheet_mut(1).unwrap().sources.insert(CellRef::new(0, 0), link("Other"));
+        s0.sources_mut().insert(CellRef::new(1, 1), link("page:3"));
+        s0.sources_mut().insert(CellRef::new(2, 1), SourceLink { file: "a & b <c>.xlsx".into(), locator: "GL Detail!C16102 \"x\"".into() });
+        wb.sheet_mut(1).unwrap().sources_mut().insert(CellRef::new(0, 0), link("Other"));
         let bytes = write_xlsx(&wb).unwrap();
         assert_eq!(sources_parts(&bytes), vec!["customXml/item1.xml".to_string()]);
         let (back, _) = read_xlsx(&bytes).unwrap();
@@ -211,10 +212,11 @@ mod tests {
     fn control_characters_and_escape_lookalikes_in_links_reopen_exactly() {
         let mut wb = Workbook::new();
         let s0 = wb.sheet_mut(0).unwrap();
-        s0.sources.insert(CellRef::new(0, 0), SourceLink { file: "f.pdf".into(), locator: "line:2\u{0C}x".into() });
-        s0.sources.insert(CellRef::new(1, 0), SourceLink { file: "a\u{01}b.pdf".into(), locator: "x\u{01}y\u{0B}z\u{7F}\u{1F}\u{FFFE}".into() });
+        s0.sources_mut().insert(CellRef::new(0, 0), SourceLink { file: "f.pdf".into(), locator: "line:2\u{0C}x".into() });
+        s0.sources_mut()
+            .insert(CellRef::new(1, 0), SourceLink { file: "a\u{01}b.pdf".into(), locator: "x\u{01}y\u{0B}z\u{7F}\u{1F}\u{FFFE}".into() });
         // Text that already looks like Excel's `_xHHHH_` escape stays literal.
-        s0.sources.insert(CellRef::new(2, 0), SourceLink { file: "_x0041_.pdf".into(), locator: "_x005F_ and _x000C_".into() });
+        s0.sources_mut().insert(CellRef::new(2, 0), SourceLink { file: "_x0041_.pdf".into(), locator: "_x005F_ and _x000C_".into() });
         let bytes = write_xlsx(&wb).unwrap();
         let (back, _) = read_xlsx(&bytes).unwrap();
         assert_eq!(back.sheets[0].sources, wb.sheets[0].sources);
@@ -232,7 +234,7 @@ mod tests {
         for (i, n) in names.iter().enumerate() {
             let sh = wb.sheet_mut(i + 1).unwrap();
             sh.set_value(CellRef::new(1, 1), 1.0.into());
-            sh.sources.insert(CellRef::new(1, 1), link(&format!("{n}!B2")));
+            sh.sources_mut().insert(CellRef::new(1, 1), link(&format!("{n}!B2")));
         }
         let bytes = write_xlsx(&wb).unwrap();
         let (back, report) = read_xlsx(&bytes).unwrap();
@@ -253,7 +255,7 @@ mod tests {
         let s0 = wb.sheet_mut(0).unwrap();
         let long = "x".repeat(70_000);
         for i in 0..1_000u32 {
-            s0.sources.insert(CellRef::new(i, 0), SourceLink { file: format!("f{i}.pdf"), locator: format!("{i}:{long}") });
+            s0.sources_mut().insert(CellRef::new(i, 0), SourceLink { file: format!("f{i}.pdf").into(), locator: format!("{i}:{long}") });
         }
         let bytes = write_xlsx(&wb).unwrap();
         let (back, report) = read_xlsx(&bytes).unwrap();
@@ -312,14 +314,14 @@ mod tests {
         let b = "Café/_x0041_\u{01}.xlsx";
         let mk = |file: &str, locator: &str| SourceLink { file: file.into(), locator: locator.into() };
         let s0 = wb.sheet_mut(0).unwrap();
-        s0.sources.insert(CellRef::new(0, 0), mk(a, "page:1 & \"net\""));
-        s0.sources.insert(CellRef::new(1, 0), mk(a, "page:2 <x>"));
-        s0.sources.insert(CellRef::new(2, 0), mk(b, "GL Detail!C16102\u{0C}"));
-        s0.sources.insert(CellRef::new(3, 0), mk(a, "page:3"));
-        s0.sources.insert(CellRef::new(4, 0), mk(b, "GL Detail!C2\u{1F}"));
+        s0.sources_mut().insert(CellRef::new(0, 0), mk(a, "page:1 & \"net\""));
+        s0.sources_mut().insert(CellRef::new(1, 0), mk(a, "page:2 <x>"));
+        s0.sources_mut().insert(CellRef::new(2, 0), mk(b, "GL Detail!C16102\u{0C}"));
+        s0.sources_mut().insert(CellRef::new(3, 0), mk(a, "page:3"));
+        s0.sources_mut().insert(CellRef::new(4, 0), mk(b, "GL Detail!C2\u{1F}"));
         let s1 = wb.sheet_mut(1).unwrap();
-        s1.sources.insert(CellRef::new(9, 3), mk(b, "x"));
-        s1.sources.insert(CellRef::new(0, 1), mk(a, "_x005F_"));
+        s1.sources_mut().insert(CellRef::new(9, 3), mk(b, "x"));
+        s1.sources_mut().insert(CellRef::new(0, 1), mk(a, "_x005F_"));
         let bytes = write_xlsx(&wb).unwrap();
         let parts = sources_parts(&bytes);
         assert_eq!(parts.len(), 1);
@@ -343,7 +345,7 @@ mod tests {
         let mut wb = Workbook::new();
         let s0 = wb.sheet_mut(0).unwrap();
         for i in 0..100_000u32 {
-            s0.sources.insert(CellRef::new(i / 10, i % 10), SourceLink { file: file.into(), locator: format!("Sheet1!R{i}") });
+            s0.sources_mut().insert(CellRef::new(i / 10, i % 10), SourceLink { file: file.into(), locator: format!("Sheet1!R{i}") });
         }
         let bytes = write_xlsx(&wb).unwrap();
         let parts = sources_parts(&bytes);

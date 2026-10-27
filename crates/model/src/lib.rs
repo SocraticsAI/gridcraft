@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! The GridCraft document model: workbooks, sheets, a copy-on-write cell store, interned
 //! styles, defined names, tables, conditional formats, validation, comments, charts and print
 //! settings. Pure data; calculation lives in `gridcraft-calc`.
@@ -11,6 +12,7 @@ pub mod features;
 pub mod password;
 pub mod preserved;
 pub mod sheet;
+pub mod source_link;
 pub mod store;
 pub mod style;
 pub mod workbook;
@@ -20,6 +22,7 @@ pub use features::*;
 pub use password::PasswordHash;
 pub use preserved::{Preserved, PreservedPart, PreservedRel, PreservedSheet, PreservedXml};
 pub use sheet::{DEFAULT_COL_WIDTH, DEFAULT_ROW_HEIGHT, LineIndex, Sheet, SheetViewMode, Visibility, points_to_chars};
+pub use source_link::{SourceLink, SourceLinks};
 pub use store::CellStore;
 pub use style::{
     Alignment, BorderLine, BorderStyle, Borders, Color, Fill, Font, HAlign, NumFmt, PatternType, Style, StyleId, StyleTable, Theme, Underline,

@@ -721,7 +721,7 @@ fn slide_together(wb: &gridcraft_model::Workbook, sheet: usize, areas: &[RangeRe
     dst.spill.retain(|c, _| !block.contains(*c));
     dst.spill_ranges.retain(|c, _| !block.contains(*c));
     dst.comments.retain(|c, _| !block.contains(*c));
-    dst.sources.retain(|c, _| !block.contains(*c));
+    dst.remove_sources_in(block, |_| true);
     dst.merges.retain(|m| !m.intersects(&block));
     if across {
         dst.cols.retain(|c, _| !(block.start.col..=block.end.col).contains(c));
@@ -745,10 +745,9 @@ fn slide_together(wb: &gridcraft_model::Workbook, sheet: usize, areas: &[RangeRe
                 dst.comments.insert(to, comment.clone());
             }
         }
-        for (c, l) in src.sources.iter().filter(|(c, _)| a.contains(**c)) {
-            if let Some(to) = c.offset(dr, dc) {
-                dst.sources.insert(to, l.clone());
-            }
+        let links: Vec<_> = src.sources.iter().filter(|(c, _)| a.contains(**c)).filter_map(|(c, l)| Some((c.offset(dr, dc)?, l.clone()))).collect();
+        if !links.is_empty() {
+            dst.sources_mut().extend(links);
         }
         for m in src.merges.iter().filter(|m| a.contains_range(m)) {
             if let (Some(s), Some(e)) = (m.start.offset(dr, dc), m.end.offset(dr, dc)) {
@@ -974,7 +973,7 @@ fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
             moved_pictures = source.cell_pictures.iter().filter(|(c, _)| src.contains(**c)).map(|(c, p)| (*c, p.clone())).collect();
             // Links move with their values: none is left on the cut cells.
             moved_sources = source.sources.iter().filter(|(c, _)| src.contains(**c)).map(|(c, l)| (*c, l.clone())).collect();
-            source.sources.retain(|c, _| !src.contains(*c));
+            source.remove_sources_in(src, |_| true);
             let taken = source.take_cells(src);
             for (c, _) in &taken {
                 cx.touch(clip.sheet, *c);
@@ -1178,10 +1177,10 @@ fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
                             let sh = cx.sheet_mut(dest_sheet)?;
                             match kept {
                                 Some(l) => {
-                                    sh.sources.insert(dest, l);
+                                    sh.sources_mut().insert(dest, l);
                                 }
                                 None => {
-                                    sh.sources.remove(&dest);
+                                    sh.remove_sources_in(RangeRef::cell(dest), |_| true);
                                 }
                             }
                             // The pasted link is new at this address, whatever it replaced, so the
@@ -1293,7 +1292,7 @@ fn clear(s: &mut Session, p: &Json, what: &str) -> Result<Json> {
             // Source links go with the contents (or alone): over the whole range, since a link
             // can sit on a cell with no value, outside the used range.
             if matches!(what, "all" | "contents" | "sources") {
-                cx.sheet_mut(sheet)?.sources.retain(|c, _| !r.contains(*c));
+                cx.sheet_mut(sheet)?.remove_sources_in(*r, |_| true);
             }
             if what == "sources" {
                 continue;

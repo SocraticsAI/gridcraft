@@ -1,4 +1,3 @@
-// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Serde helpers for maps keyed by `CellRef`. JSON object keys must be strings, so the keys are
 //! written as `A1`-style text.
 
@@ -24,7 +23,7 @@ pub fn deserialize<'de, D: Deserializer<'de>, V: Deserialize<'de>>(d: D) -> Resu
 
 #[cfg(test)]
 mod tests {
-    use crate::{Comment, Hyperlink, Sheet, SourceLink};
+    use crate::{Comment, Hyperlink, Sheet};
     use gridcraft_core::CellRef;
 
     #[test]
@@ -49,26 +48,5 @@ mod tests {
         let back: Sheet = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.comments, s.comments);
         assert_eq!(back.hyperlinks, s.hyperlinks);
-    }
-
-    #[test]
-    fn source_links_survive_json_and_stay_out_of_it_when_empty() {
-        let mut s = Sheet::new("S");
-        let empty = serde_json::to_string(&s).expect("serialize");
-        assert!(!empty.contains("\"sources\""), "an unlinked sheet writes no sources key: {empty}");
-        s.sources.insert(CellRef::new(1, 1), SourceLink { file: "Cash/Statement.pdf".into(), locator: "page:3".into() });
-        let json = serde_json::to_string(&s).expect("serialize");
-        assert!(json.contains("\"B2\""), "keys are A1 text: {json}");
-        let back: Sheet = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.sources, s.sources);
-        // A link with a field this version doesn't know still loads, without it.
-        let mut value = serde_json::to_value(&s).expect("to value");
-        value["sources"]["B2"]["unknown"] = serde_json::json!("x");
-        let unknown: Sheet = serde_json::from_value(value.clone()).expect("a link with an unknown field loads");
-        assert_eq!(unknown.sources, s.sources);
-        // JSON written before links existed still loads.
-        value.as_object_mut().expect("object").remove("sources");
-        let old: Sheet = serde_json::from_value(value).expect("older JSON loads");
-        assert!(old.sources.is_empty());
     }
 }
