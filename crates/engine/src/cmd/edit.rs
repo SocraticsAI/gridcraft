@@ -1174,6 +1174,7 @@ fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
                                 | What::ValuesAndNumberFormats
                         ) {
                             let kept = if link || op != "none" { None } else { src_source };
+                            let pasted = kept.is_some();
                             let sh = cx.sheet_mut(dest_sheet)?;
                             match kept {
                                 Some(l) => {
@@ -1182,6 +1183,11 @@ fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
                                 None => {
                                     sh.sources.remove(&dest);
                                 }
+                            }
+                            // The pasted link is new at this address, whatever it replaced, so the
+                            // commit mustn't read the pasted value under it as a cell typed over.
+                            if pasted {
+                                cx.note_sources_moved(dest_sheet, [dest]);
                             }
                         }
                         cx.touch(dest_sheet, dest);

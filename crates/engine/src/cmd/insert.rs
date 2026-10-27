@@ -284,16 +284,13 @@ fn insert_table(s: &mut Session, p: &Json) -> Result<Json> {
                     dest.map(|c| (c, v))
                 })
                 .collect();
-            sh.sources = std::mem::take(&mut sh.sources)
-                .into_iter()
-                .filter_map(|(c, v)| {
-                    let dest = if c.col >= r.start.col && c.col <= r.end.col && c.row >= r.start.row { c.offset(1, 0) } else { Some(c) };
-                    dest.map(|c| (c, v))
-                })
-                .collect();
+            let moved_sources = super::sheet::remap_sources(sh, &|c: CellRef| {
+                if c.col >= r.start.col && c.col <= r.end.col && c.row >= r.start.row { c.offset(1, 0) } else { Some(c) }
+            });
             for (i, c) in (r.start.col..=r.end.col).enumerate() {
                 sh.set_value(CellRef::new(r.start.row, c), gridcraft_core::Value::text(format!("Column{}", i + 1)));
             }
+            cx.note_sources_moved(sheet, moved_sources);
             cx.structural = true;
             RangeRef::new(r.start, CellRef::new((r.end.row + 1).min(MAX_ROWS - 1), r.end.col))
         };

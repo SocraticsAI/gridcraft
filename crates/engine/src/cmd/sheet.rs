@@ -112,8 +112,32 @@ fn shift_anchor(sh: &Sheet, a: Anchor, corner: (u32, u32, f32, f32), axis: Axis,
     Anchor { cell: CellRef::new(nr, nc), dx: a.dx, dy: a.dy, width: (xn - x1).max(0.0) as f32, height: (yn - y1).max(0.0) as f32, mode: a.mode }
 }
 
-/// Shifts everything that has a position on the sheet for an insert/delete.
-fn shift_sheet_features(sh: &mut Sheet, axis: Axis, at: u32, count: u32, insert: bool) {
+/// Moves the sheet's source links to where `map_cell` sends their cells, dropping those whose cell
+/// is gone. Returns the addresses a link arrived at from a *different* address: a link that moved
+/// is new where it lands, whatever it replaced, so [`Ctx::note_sources_moved`] keeps the commit's
+/// typed-over check off those addresses. A link whose address `map_cell` leaves alone isn't
+/// reported, so an edit that shifts part of a sheet can still drop a link it typed over elsewhere.
+pub(crate) fn remap_sources(sh: &mut Sheet, map_cell: &impl Fn(CellRef) -> Option<CellRef>) -> Vec<CellRef> {
+    if sh.sources.is_empty() {
+        return Vec::new();
+    }
+    let mut moved = Vec::new();
+    sh.sources = std::mem::take(&mut sh.sources)
+        .into_iter()
+        .filter_map(|(c, v)| {
+            let dest = map_cell(c).filter(CellRef::is_valid)?;
+            if dest != c {
+                moved.push(dest);
+            }
+            Some((dest, v))
+        })
+        .collect();
+    moved
+}
+
+/// Shifts everything that has a position on the sheet for an insert/delete. Returns the addresses
+/// source links moved to, for [`Ctx::note_sources_moved`].
+fn shift_sheet_features(sh: &mut Sheet, axis: Axis, at: u32, count: u32, insert: bool) -> Vec<CellRef> {
     let map_line = |v: u32| -> Option<u32> {
         if insert {
             if v >= at { v.checked_add(count) } else { Some(v) }
@@ -187,7 +211,7 @@ fn shift_sheet_features(sh: &mut Sheet, axis: Axis, at: u32, count: u32, insert:
         std::mem::take(&mut sh.cell_pictures).into_iter().filter_map(|(c, v)| map_cell(c).filter(CellRef::is_valid).map(|c| (c, v))).collect();
     sh.comments = std::mem::take(&mut sh.comments).into_iter().filter_map(|(c, v)| map_cell(c).map(|c| (c, v))).collect();
     sh.hyperlinks = std::mem::take(&mut sh.hyperlinks).into_iter().filter_map(|(c, v)| map_cell(c).map(|c| (c, v))).collect();
-    sh.sources = std::mem::take(&mut sh.sources).into_iter().filter_map(|(c, v)| map_cell(c).filter(CellRef::is_valid).map(|c| (c, v))).collect();
+    let moved_sources = remap_sources(sh, &map_cell);
     // Floating objects follow their anchor lines per their [`AnchorMode`]. Corners were snapshotted
     // as charts ++ images ++ shapes, matching the three slices below. New anchors are computed
     // against the post-shift grid first (the re-fit needs its sizes), then written back.
@@ -213,6 +237,7 @@ fn shift_sheet_features(sh: &mut Sheet, axis: Axis, at: u32, count: u32, insert:
     if let Some(pa) = sh.print.print_area {
         sh.print.print_area = map_range(pa);
     }
+    moved_sources
 }
 
 /// Rewrites every formula reference (and chart series) for a structural edit on `target`.
@@ -268,13 +293,13 @@ fn insert_lines(s: &mut Session, p: &Json, axis: Axis) -> Result<Json> {
     let out = edit(s, |cx| {
         let name = cx.wb.sheet(sheet).map(|s| s.name.clone()).unwrap_or_default();
         cx.protection_checked = true;
-        {
+        let moved_sources = {
             let sh = cx.sheet_mut(sheet)?;
             match axis {
                 Axis::Rows => sh.cells.shift_rows(at, count as i64),
                 Axis::Cols => sh.cells.shift_cols(at, count as i64),
             }
-            shift_sheet_features(sh, axis, at, count, true);
+            let moved_sources = shift_sheet_features(sh, axis, at, count, true);
             // New lines take the format of the line before (Excel's "Format Same As Above").
             if at > 0 {
                 let prev = if axis == Axis::Rows { sh.rows.get(&(at - 1)).copied() } else { sh.cols.get(&(at - 1)).copied() };
@@ -285,7 +310,9 @@ fn insert_lines(s: &mut Session, p: &Json, axis: Axis) -> Result<Json> {
                     }
                 }
             }
-        }
+            moved_sources
+        };
+        cx.note_sources_moved(sheet, moved_sources);
         rewrite(&mut cx.wb, &name, &Edit::Insert { axis, at, count });
         cx.structural = true;
         Ok(Json::Null)
@@ -338,7 +365,7 @@ fn delete_lines(s: &mut Session, p: &Json, axis: Axis) -> Result<Json> {
         cx.protection_checked = true;
         // Last area first, so the earlier ones keep their positions.
         for (at, count) in areas {
-            {
+            let moved_sources = {
                 let sh = cx.sheet_mut(sheet)?;
                 let block = match axis {
                     Axis::Rows => RangeRef::rows(at, (at + count - 1).min(MAX_ROWS - 1)),
@@ -349,8 +376,9 @@ fn delete_lines(s: &mut Session, p: &Json, axis: Axis) -> Result<Json> {
                     Axis::Rows => sh.cells.shift_rows(at + count, -(count as i64)),
                     Axis::Cols => sh.cells.shift_cols(at + count, -(count as i64)),
                 }
-                shift_sheet_features(sh, axis, at, count, false);
-            }
+                shift_sheet_features(sh, axis, at, count, false)
+            };
+            cx.note_sources_moved(sheet, moved_sources);
             rewrite(&mut cx.wb, &name, &Edit::Delete { axis, at, count });
         }
         cx.structural = true;
@@ -396,22 +424,23 @@ fn move_columns(s: &mut Session, p: &Json) -> Result<Json> {
         let name = cx.wb.sheet(sheet).map(|sh| sh.name.clone()).unwrap_or_default();
         cx.protection_checked = true;
 
-        {
+        let moved_sources = {
             let sh = cx.sheet_mut(sheet)?;
             sh.cells.shift_cols(before, count as i64);
-            shift_sheet_features(sh, Axis::Cols, before, count, true);
-        }
+            shift_sheet_features(sh, Axis::Cols, before, count, true)
+        };
+        cx.note_sources_moved(sheet, moved_sources);
         rewrite(&mut cx.wb, &name, &Edit::Insert { axis: Axis::Cols, at: before, count });
 
         let mut touched = Vec::new();
-        {
+        let moved_sources = {
             let sh = cx.sheet_mut(sheet)?;
             let pictures: Vec<_> =
                 sh.cell_pictures.iter().filter(|(cell, _)| source.contains(**cell)).map(|(cell, picture)| (*cell, picture.clone())).collect();
             let cells = sh.take_cells(source);
             let moved_lines: Vec<_> = (0..count).filter_map(|offset| sh.cols.remove(&(moved_from + offset)).map(|info| (offset, info))).collect();
             let movement = Edit::Move { from: source, to_row: 0, to_col: destination };
-            shift_cell_features(sh, &movement);
+            let moved_sources = shift_cell_features(sh, &movement);
             for object in sh
                 .charts
                 .iter_mut()
@@ -435,17 +464,20 @@ fn move_columns(s: &mut Session, p: &Json) -> Result<Json> {
             for (offset, info) in moved_lines {
                 sh.cols.insert(destination + offset, info);
             }
-        }
+            moved_sources
+        };
+        cx.note_sources_moved(sheet, moved_sources);
         for cell in touched {
             cx.touch(sheet, cell);
         }
         rewrite(&mut cx.wb, &name, &Edit::Move { from: source, to_row: 0, to_col: destination });
 
-        {
+        let moved_sources = {
             let sh = cx.sheet_mut(sheet)?;
             sh.cells.shift_cols(delete_at + count, -(count as i64));
-            shift_sheet_features(sh, Axis::Cols, delete_at, count, false);
-        }
+            shift_sheet_features(sh, Axis::Cols, delete_at, count, false)
+        };
+        cx.note_sources_moved(sheet, moved_sources);
         rewrite(&mut cx.wb, &name, &Edit::Delete { axis: Axis::Cols, at: delete_at, count });
         *cx.sel = crate::Selection {
             active: CellRef::new(active_row, final_start),
@@ -480,7 +512,8 @@ fn insert_cells(s: &mut Session, p: &Json) -> Result<Json> {
         } else {
             sh.cells.shift_rows_in_cols(r.start.col, r.end.col, r.start.row, r.height() as i64);
         }
-        shift_cell_features(sh, &e);
+        let moved_sources = shift_cell_features(sh, &e);
+        cx.note_sources_moved(sheet, moved_sources);
         let name = cx.wb.sheet(sheet).map(|s| s.name.clone()).unwrap_or_default();
         rewrite(&mut cx.wb, &name, &e);
         cx.structural = true;
@@ -506,7 +539,7 @@ fn delete_cells(s: &mut Session, p: &Json) -> Result<Json> {
     let left = shift == "left";
     let out = edit(s, |cx| {
         let name = cx.wb.sheet(sheet).map(|s| s.name.clone()).unwrap_or_default();
-        {
+        let moved_sources = {
             let sh = cx.sheet_mut(sheet)?;
             sh.take_cells(r);
             if left {
@@ -514,8 +547,9 @@ fn delete_cells(s: &mut Session, p: &Json) -> Result<Json> {
             } else {
                 sh.cells.shift_rows_in_cols(r.start.col, r.end.col, r.end.row + 1, -(r.height() as i64));
             }
-            shift_cell_features(sh, &e);
-        }
+            shift_cell_features(sh, &e)
+        };
+        cx.note_sources_moved(sheet, moved_sources);
         // References into the deleted cells become #REF!; the rest move.
         rewrite(&mut cx.wb, &name, &e);
         cx.structural = true;
@@ -964,8 +998,9 @@ pub(crate) fn map_range(r: RangeRef, e: &Edit) -> Option<RangeRef> {
 }
 
 /// Shifts what Insert/Delete Cells moves along with the cells: merged areas, conditional
-/// format, validation, table, filter and print-area ranges, notes, links and sparklines.
-fn shift_cell_features(sh: &mut Sheet, e: &Edit) {
+/// format, validation, table, filter and print-area ranges, notes, links and sparklines. Returns
+/// the addresses source links moved to, for [`Ctx::note_sources_moved`].
+fn shift_cell_features(sh: &mut Sheet, e: &Edit) -> Vec<CellRef> {
     let map_cell = |c: CellRef| map_range(RangeRef::cell(c), e).map(|r| r.start);
     sh.merges = sh.merges.iter().filter_map(|m| map_range(*m, e)).filter(|m| !m.is_single()).collect();
     for cf in sh.cond_formats.iter_mut() {
@@ -1001,7 +1036,7 @@ fn shift_cell_features(sh: &mut Sheet, e: &Edit) {
         std::mem::take(&mut sh.cell_pictures).into_iter().filter_map(|(c, v)| map_cell(c).filter(CellRef::is_valid).map(|c| (c, v))).collect();
     sh.comments = std::mem::take(&mut sh.comments).into_iter().filter_map(|(c, v)| map_cell(c).map(|c| (c, v))).collect();
     sh.hyperlinks = std::mem::take(&mut sh.hyperlinks).into_iter().filter_map(|(c, v)| map_cell(c).map(|c| (c, v))).collect();
-    sh.sources = std::mem::take(&mut sh.sources).into_iter().filter_map(|(c, v)| map_cell(c).filter(CellRef::is_valid).map(|c| (c, v))).collect();
+    let moved_sources = remap_sources(sh, &map_cell);
     for sp in sh.sparklines.iter_mut() {
         if let Some(c) = map_cell(sp.cell) {
             sp.cell = c;
@@ -1010,6 +1045,7 @@ fn shift_cell_features(sh: &mut Sheet, e: &Edit) {
     if let Some(pa) = sh.print.print_area {
         sh.print.print_area = map_range(pa, e);
     }
+    moved_sources
 }
 
 /// Columns inserted inside a table become new table columns (with names no other column has);
