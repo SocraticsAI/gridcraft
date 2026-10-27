@@ -28,19 +28,25 @@ carries a notice on its first line.
    paste); copy and paste copies them; typing, filling or replacing over a cell, clearing its contents or
    merging it into a neighbour drops its link. They are saved in the `.xlsx` as a custom XML part (namespace
    `urn:socratics:sources:2`), grouped by file: per sheet, one `<file path>` per file holding a
-   `<link ref locator>` per cell. Unknown attributes are ignored. A linked hard-coded number carries a small
+   `<link ref locator>` per cell. Unknown attributes are ignored. A link's `file` read from a workbook is
+   **untrusted**: any workbook can name an absolute path, a UNC share or a `..` escape, and the engine neither
+   validates nor rejects one. A host that opens or fetches what a link names must resolve it against its own
+   root and refuse anything that leaves it. Source links are also part of what sheet protection holds still:
+   `source.set`, `source.clear` and Clear Sources are refused on a locked cell of a protected sheet, as typing
+   in it is, while the row and column edits protection allows still carry links along. A linked hard-coded number carries a small
    blue marker in its top-left corner, with a tooltip naming its source, and is tinted while it is the active
    cell; nothing else shows a marker. A plain click on it raises `UiRequest::SourceClick` (sheet, cell and its
    rectangle on screen), passed to the host's `Services::source_click`. A Sources switch in the sheet-tab bar,
    at the start of the horizontal scrollbar's share, runs the UI command `view.sourceInspector` (on by
    default, saved in `UiState`) and turns markers, tint, tooltip and click off. The tab viewport is sized to
-   its tabs so New Sheet follows the last tab, and New Sheet is named for assistive tech. The marker, tint
+   its tabs so New Sheet follows the last tab — but never below what the active tab needs, so a long sheet
+   name takes those pixels back instead of being clipped — and New Sheet is named for assistive tech. The marker, tint
    and switch colours are theme tokens. Files: `crates/model` (`src/{cellmap,features,sheet}.rs`),
    `crates/engine` (`src/lib.rs`, the new `src/source_state.rs`, `src/cmd/{data,edit,format,insert,mod,sheet}.rs`,
    the new `src/cmd/source.rs`, `tests/command_sequence_fuzz.rs`), `crates/xlsx`
    (`src/{lib,passthrough,read,write}.rs`, the new `src/sources.rs`, `src/tests/passthrough_tests.rs`) and
-   `crates/ui-egui` (`src/{control,grid,lib,ribbon,tabs,theme,widgets}.rs`, the new `src/source_marks.rs` and
-   `tests/source_links.rs`). Not proposed upstream.
+   `crates/ui-egui` (`src/{control,grid,lib,ribbon,tabs,theme,widgets}.rs`, `tests/sheet_tabs.rs`, the new
+   `src/source_marks.rs` and `tests/source_links.rs`). Not proposed upstream.
 
 An earlier change, the host chrome switch, was merged upstream as
 [storytold/gridcraft#1877](https://github.com/storytold/gridcraft/pull/1877) and is in GridCraft from v0.10.0.

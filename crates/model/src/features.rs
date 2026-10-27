@@ -378,6 +378,11 @@ pub struct Hyperlink {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceLink {
     /// The source document, relative to the open folder.
+    ///
+    /// Untrusted when it comes from a file: a workbook from anywhere can name an absolute path, a
+    /// UNC share or a `..` escape, and nothing here validates or rejects one. A host that opens or
+    /// fetches what a link names must resolve it against its own root and refuse anything that
+    /// leaves it, exactly as it would a path typed by a stranger.
     pub file: String,
     /// Where in the document: `Sheet!A1`, `page:N`, `slide:N`, `line:N` or `document` (the whole file).
     pub locator: String,
