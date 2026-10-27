@@ -126,24 +126,41 @@ fn hidden_sheets_long_names_and_window_resize_keep_active_tab_visible() {
     for sheet in 1..10 {
         h.state_mut().run("sheet.hide", json!({"sheet":sheet})).unwrap();
     }
-    // Two names at Excel's 31-character limit. The second is near the widest that limit allows, so
-    // the tab needs more than the share left over once the New Sheet button is taken out of the tab
-    // strip: the strip has to give those pixels back rather than clip the active tab. How wide a
-    // name of a given length paints depends on the platform's fonts, so the narrow case here fails
-    // with one name and not the other depending on where it runs.
-    for name in ["Quarterly results and forecasts", "CAPITAL ALLOTMENT LISTING FY24A"] {
-        h.state_mut().run("sheet.rename", json!({"sheet":29,"name":name})).unwrap();
-        h.state_mut().run("sheet.activate", json!({"sheet":29})).unwrap();
-        h.run_steps(20);
-        assert_visible(&h, name);
-        // Narrow, but still wide enough for the long tab next to the arrows and the All Sheets button.
-        h.set_size(vec2(560.0, 120.0));
-        h.run_steps(20);
-        assert_visible(&h, name);
-        h.set_size(vec2(1000.0, 120.0));
-        h.run_steps(20);
-        assert_visible(&h, name);
-        assert_eq!(h.state().session.doc().unwrap().wb.active_sheet, 29);
+    let name = "Quarterly results and forecasts";
+    h.state_mut().run("sheet.rename", json!({"sheet":29,"name":name})).unwrap();
+    h.state_mut().run("sheet.activate", json!({"sheet":29})).unwrap();
+    h.run_steps(20);
+    assert_visible(&h, name);
+    // Narrow, but still wide enough for the long tab next to the arrows and the All Sheets button.
+    h.set_size(vec2(560.0, 120.0));
+    h.run_steps(20);
+    assert_visible(&h, name);
+    h.set_size(vec2(1000.0, 120.0));
+    h.run_steps(20);
+    assert_visible(&h, name);
+    assert_eq!(h.state().session.doc().unwrap().wb.active_sheet, 29);
+}
+
+/// How wide a name paints depends on the platform's fonts, so whether any one name clips in a
+/// given window differs between CI and a developer's machine. This checks the rule instead of a
+/// painted name: the tabs' viewport is never narrower than the active tab, so revealing it can
+/// always show the whole name — unless the strip's own share of the bar is the limit, which no
+/// amount of budgeting can help. Taking the New Sheet button's width out of the strip broke this
+/// for long names on fonts where they need more than the share left over.
+#[test]
+fn the_tab_strip_keeps_room_for_the_whole_active_tab() {
+    for width in [420.0, 560.0, 700.0, 1000.0] {
+        for name in ["Tab29", "Quarterly results and forecasts", "CAPITAL ALLOTMENT LISTING FY24A"] {
+            let mut h = harness(width, 0);
+            h.state_mut().run("sheet.rename", json!({"sheet":29,"name":name})).unwrap();
+            h.state_mut().run("sheet.activate", json!({"sheet":29})).unwrap();
+            h.run_steps(20);
+            let (viewport, active, section) = h.state().grid.tab_strip.expect("the tab strip reports its widths");
+            assert!(
+                viewport + 0.5 >= active.min(section),
+                "{width}px / {name:?}: viewport {viewport} is narrower than the active tab ({active}) and than the strip's share ({section})"
+            );
+        }
     }
 }
 

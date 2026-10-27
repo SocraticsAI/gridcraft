@@ -43,7 +43,9 @@ carries a notice on its first line.
    at the start of the horizontal scrollbar's share, runs the UI command `view.sourceInspector` (on by
    default, saved in `UiState`) and turns markers, tint, tooltip and click off. The tab viewport is sized to
    its tabs so New Sheet follows the last tab — but never below what the active tab needs, so a long sheet
-   name takes those pixels back instead of being clipped — and New Sheet is named for assistive tech. The marker, tint
+   name takes those pixels back instead of being clipped (`GridState::tab_strip` reports the three widths, so
+   tests can check that rule instead of measuring a painted name, which depends on the platform's fonts) —
+   and New Sheet is named for assistive tech. The marker, tint
    and switch colours are theme tokens. Files: `crates/model` (`src/{cellmap,features,sheet}.rs`),
    `crates/engine` (`src/lib.rs`, the new `src/source_state.rs`, `src/cmd/{data,edit,format,insert,mod,sheet}.rs`,
    the new `src/cmd/source.rs`, `tests/command_sequence_fuzz.rs`), `crates/xlsx`

@@ -236,6 +236,7 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
                     });
             });
             ui.add_space(6.0);
+            app.grid.tab_strip = Some((tabs_width, active_width, section));
             let new_sheet = crate::widgets::icon_button(ui, Icon::Plus, t.text_dim, "New sheet (⇧F11)", vec2(26.0, 26.0));
             new_sheet.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "New sheet"));
             if new_sheet.clicked() {

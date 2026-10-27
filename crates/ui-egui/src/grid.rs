@@ -148,6 +148,11 @@ pub struct GridState {
     pub geo: Option<Geo>,
     /// The horizontal scrollbar's track in the sheet tab bar (hit-testing for tests).
     pub hscroll: Option<Rect>,
+    /// The sheet-tab strip's widths last frame, for tests: `(tabs viewport, active tab, the
+    /// strip's share of the bar)`. The viewport is never narrower than the active tab unless that
+    /// share is itself the limit, so the active tab can always be revealed whole. Font-independent,
+    /// unlike measuring a painted name.
+    pub tab_strip: Option<(f32, f32, f32)>,
     /// Ctrl+wheel zoom in progress (see [`WheelZoom`]).
     pub wheel_zoom: Option<WheelZoom>,
     /// A one-finger touch drag in progress: it pans the sheet instead of selecting.
