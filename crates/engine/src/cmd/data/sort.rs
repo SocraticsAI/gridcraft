@@ -235,6 +235,9 @@ fn do_sort(s: &mut Session, sheet: usize, r: RangeRef, header: bool, keys: Vec<S
         }
         shm.cell_pictures.extend(pictures);
         shm.sources.retain(|c, _| !body.contains(*c));
+        // The sort gives each link its row's new address, so the commit mustn't read the value
+        // that moved in under it as the cell having been typed over.
+        let moved_sources: Vec<CellRef> = sources.iter().map(|(c, _)| *c).collect();
         shm.sources.extend(sources);
         for (i, h) in heights.into_iter().enumerate() {
             let row = body.start.row + i as u32;
@@ -280,6 +283,7 @@ fn do_sort(s: &mut Session, sheet: usize, r: RangeRef, header: bool, keys: Vec<S
         for (c, _) in moved {
             cx.changed.push((sheet, c));
         }
+        cx.note_sources_moved(sheet, moved_sources);
         cx.structural = true;
         Ok(Json::Null)
     })?;

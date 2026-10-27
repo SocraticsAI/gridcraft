@@ -72,17 +72,21 @@ fn set_links(s: &mut Session, p: &Json) -> Result<Json> {
     }
     let linked = parsed.iter().filter(|(_, l)| l.is_some()).count();
     edit(s, |cx| {
+        let mut set = Vec::new();
         let sh = cx.sheet_mut(sheet)?;
         for (at, link) in parsed {
             match link {
                 Some(l) => {
                     sh.sources.insert(at, l);
+                    set.push(at);
                 }
                 None => {
                     sh.sources.remove(&at);
                 }
             }
         }
+        // A link this command set is new at its address, whatever stood there before.
+        cx.note_sources_moved(sheet, set);
         Ok(json!({"linked": linked}))
     })
 }
@@ -287,6 +291,165 @@ mod tests {
         assert_eq!(locator(&s, "A3").as_deref(), Some("third"));
         assert_eq!(locator(&s, "A4"), None);
         assert_eq!(link_count(&s, "Sheet1"), 2);
+    }
+
+    // Figures that share a page or a document locator carry *identical* links, which is the normal
+    // case for document sources. A link moved onto an address that held an identical one must not
+    // read as the cell having been typed over, so none of these edits may drop one.
+
+    /// The locator on each of `cells`, for an assertion that names them all at once.
+    fn locators(s: &Session, cells: &[&str]) -> Vec<Option<String>> {
+        cells.iter().map(|c| locator(s, c)).collect()
+    }
+
+    /// The number in each of `cells`, to check each link still sits on the figure it describes.
+    fn numbers(s: &Session, cells: &[&str]) -> Vec<Option<f64>> {
+        let wb = &s.doc().unwrap().wb;
+        cells
+            .iter()
+            .map(|c| match wb.active().unwrap().value(CellRef::parse(c).unwrap()) {
+                gridcraft_core::Value::Number(n) => Some(n),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `A1:A5` holding 1…5, every one linked to the same page of the same document.
+    fn same_page() -> Session {
+        let mut s = s();
+        for i in 1..=5 {
+            put(&mut s, &format!("A{i}"), f64::from(i), "page:3");
+        }
+        assert_eq!(link_count(&s, "Sheet1"), 5);
+        s
+    }
+
+    fn all_page3(n: usize) -> Vec<Option<String>> {
+        vec![Some("page:3".to_string()); n]
+    }
+
+    #[test]
+    fn identical_links_follow_a_deleted_row() {
+        let mut s = same_page();
+        s.execute("home.deleteRows", json!({"rows": "2:2"})).unwrap();
+        // Row 2's link went with the row; the four below moved up, values and links together.
+        assert_eq!(numbers(&s, &["A1", "A2", "A3", "A4"]), [Some(1.0), Some(3.0), Some(4.0), Some(5.0)]);
+        assert_eq!(locators(&s, &["A1", "A2", "A3", "A4"]), all_page3(4));
+        assert_eq!(locator(&s, "A5"), None);
+        assert_eq!(link_count(&s, "Sheet1"), 4);
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(locators(&s, &["A1", "A2", "A3", "A4", "A5"]), all_page3(5));
+    }
+
+    #[test]
+    fn identical_links_follow_an_inserted_row() {
+        let mut s = same_page();
+        s.execute("home.insertRows", json!({"rows": "2:2"})).unwrap();
+        assert_eq!(numbers(&s, &["A1", "A2", "A3"]), [Some(1.0), None, Some(2.0)]);
+        assert_eq!(locators(&s, &["A1", "A3", "A4", "A5", "A6"]), all_page3(5));
+        assert_eq!(locator(&s, "A2"), None, "the blank row has no link");
+        assert_eq!(link_count(&s, "Sheet1"), 5);
+    }
+
+    #[test]
+    fn identical_links_follow_inserted_and_deleted_cells() {
+        let mut s = same_page();
+        s.execute("home.insertCells", json!({"range": "A2", "shift": "down"})).unwrap();
+        assert_eq!(locators(&s, &["A1", "A3", "A4", "A5", "A6"]), all_page3(5));
+        assert_eq!(link_count(&s, "Sheet1"), 5);
+        s.execute("home.deleteCells", json!({"range": "A2", "shift": "up"})).unwrap();
+        assert_eq!(numbers(&s, &["A1", "A2", "A3", "A4", "A5"]), [Some(1.0), Some(2.0), Some(3.0), Some(4.0), Some(5.0)]);
+        assert_eq!(locators(&s, &["A1", "A2", "A3", "A4", "A5"]), all_page3(5));
+        assert_eq!(link_count(&s, "Sheet1"), 5);
+    }
+
+    #[test]
+    fn identical_links_follow_sorted_rows() {
+        let mut s = same_page();
+        s.execute("data.sort", json!({"range": "A1:A5", "keys": [{"column": "A", "order": "desc"}]})).unwrap();
+        assert_eq!(numbers(&s, &["A1", "A2", "A3", "A4", "A5"]), [Some(5.0), Some(4.0), Some(3.0), Some(2.0), Some(1.0)]);
+        assert_eq!(locators(&s, &["A1", "A2", "A3", "A4", "A5"]), all_page3(5), "every reordered figure keeps its link");
+        assert_eq!(link_count(&s, "Sheet1"), 5);
+    }
+
+    #[test]
+    fn identical_links_survive_cut_and_paste_and_paste_over() {
+        let mut s = same_page();
+        // Cut A2:A3 and drop them one row down, over A4:A5, which hold identical links.
+        s.execute("edit.cut", json!({"range": "A2:A3"})).unwrap();
+        s.execute("edit.paste", json!({"at": "A4"})).unwrap();
+        assert_eq!(numbers(&s, &["A1", "A4", "A5"]), [Some(1.0), Some(2.0), Some(3.0)]);
+        assert_eq!(locators(&s, &["A1", "A4", "A5"]), all_page3(3));
+        assert_eq!(locators(&s, &["A2", "A3"]), [None, None], "the cut cells keep no link");
+        assert_eq!(link_count(&s, "Sheet1"), 3);
+        // Copy a linked cell over another cell linked to the same page.
+        let mut s = same_page();
+        s.execute("edit.copy", json!({"range": "A1"})).unwrap();
+        s.execute("edit.paste", json!({"at": "A5"})).unwrap();
+        assert_eq!(numbers(&s, &["A1", "A5"]), [Some(1.0), Some(1.0)]);
+        assert_eq!(locators(&s, &["A1", "A2", "A3", "A4", "A5"]), all_page3(5), "the pasted link replaces the identical one");
+        assert_eq!(link_count(&s, "Sheet1"), 5);
+    }
+
+    #[test]
+    fn typing_over_one_of_several_identical_links_drops_only_that_one() {
+        let mut s = same_page();
+        s.execute("range.setValues", json!({"range": "A3", "values": [[99]]})).unwrap();
+        assert_eq!(locator(&s, "A3"), None, "the cell typed over loses its link");
+        assert_eq!(locators(&s, &["A1", "A2", "A4", "A5"]), all_page3(4), "its neighbours keep theirs");
+        assert_eq!(link_count(&s, "Sheet1"), 4);
+    }
+
+    #[test]
+    fn an_insert_elsewhere_still_drops_a_link_typed_over_in_the_same_edit() {
+        let mut s = same_page();
+        // Text to Columns inserts a column and rewrites the split cell in one commit: the shift
+        // must not excuse the cell it overwrote.
+        put_text(&mut s, "C1", "7 8", "split");
+        s.execute("data.textToColumns", json!({"range": "C1", "delimiters": [" "]})).unwrap();
+        assert_eq!(locator(&s, "C1"), None, "the split cell was typed over");
+        assert_eq!(locators(&s, &["A1", "A2", "A3", "A4", "A5"]), all_page3(5), "the untouched links stay");
+    }
+
+    #[test]
+    fn a_protected_sheet_refuses_setting_and_clearing_links_on_its_locked_cells() {
+        let mut s = s();
+        put(&mut s, "A1", 1.0, "locked");
+        put(&mut s, "B1", 2.0, "unlocked");
+        // B1 is left editable, the way a form leaves its input cells.
+        s.execute("home.lockCell", json!({"range": "B1", "on": false})).unwrap();
+        s.execute("review.protectSheet", json!({})).unwrap();
+        // A link says where a locked cell's value came from, so it's as protected as the value.
+        assert!(s.execute("source.set", json!({"range": "A1", "links": [[link_json("new")]]})).is_err());
+        assert!(s.execute("source.clear", json!({"range": "A1"})).is_err());
+        assert!(s.execute("edit.clearSources", json!({"range": "A1"})).is_err());
+        assert_eq!(locator(&s, "A1").as_deref(), Some("locked"), "the refused commands changed nothing");
+        // An unlocked cell takes links as it takes values.
+        s.execute("source.set", json!({"range": "B1", "links": [[link_json("edited")]]})).unwrap();
+        assert_eq!(locator(&s, "B1").as_deref(), Some("edited"));
+        s.execute("source.clear", json!({"range": "B1"})).unwrap();
+        assert_eq!(locator(&s, "B1"), None);
+        // Unprotecting gives the locked cell's link back to the host.
+        s.execute("review.unprotectSheet", json!({})).unwrap();
+        s.execute("source.set", json!({"range": "A1", "links": [[link_json("new")]]})).unwrap();
+        assert_eq!(locator(&s, "A1").as_deref(), Some("new"));
+    }
+
+    #[test]
+    fn a_protected_sheet_still_lets_links_follow_rows_it_allows_to_move() {
+        let mut s = same_page();
+        s.execute("review.protectSheet", json!({"insertRows": true, "deleteRows": true})).unwrap();
+        // An insert the protection allows shifts the links with their cells, protected or not.
+        s.execute("home.insertRows", json!({"rows": "2:2"})).unwrap();
+        assert_eq!(locators(&s, &["A1", "A3", "A4", "A5", "A6"]), all_page3(5));
+        // Deleting a row of locked cells stays refused (as in Excel), so no link is lost that way.
+        assert!(s.execute("home.deleteRows", json!({"rows": "3:3"})).is_err());
+        assert_eq!(locators(&s, &["A1", "A3", "A4", "A5", "A6"]), all_page3(5));
+        // Unprotected, the delete goes through and the links below move up with their values.
+        s.execute("review.unprotectSheet", json!({})).unwrap();
+        s.execute("home.deleteRows", json!({"rows": "2:2"})).unwrap();
+        assert_eq!(numbers(&s, &["A1", "A2", "A3", "A4", "A5"]), [Some(1.0), Some(2.0), Some(3.0), Some(4.0), Some(5.0)]);
+        assert_eq!(locators(&s, &["A1", "A2", "A3", "A4", "A5"]), all_page3(5));
     }
 
     /// Writes a text value and its link on the active sheet.

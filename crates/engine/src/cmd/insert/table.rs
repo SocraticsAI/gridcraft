@@ -58,9 +58,10 @@ pub(super) fn insert_table(s: &mut Session, p: &Json) -> Result<Json> {
             // Like Insert Cells > Shift down: move merges, conditional formats, notes, links and pictures, and re-point every formula
             // reference (on any sheet) at the cells that moved.
             let e = Edit::InsertCells { axis: Axis::Rows, range: RangeRef::new(r.start, CellRef::new(r.start.row, r.end.col)) };
-            shift_cell_features(sh, &e);
+            let moved_sources = shift_cell_features(sh, &e);
             let name = sh.name.clone();
             rewrite(&mut cx.wb, &name, &e);
+            cx.note_sources_moved(sheet, moved_sources);
             let sh = cx.sheet_mut(sheet)?;
             for (i, c) in (r.start.col..=r.end.col).enumerate() {
                 sh.set_value(CellRef::new(r.start.row, c), gridcraft_core::Value::text(format!("Column{}", i + 1)));

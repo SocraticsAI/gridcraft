@@ -103,6 +103,7 @@ pub(super) fn remove_duplicates(s: &mut Session, p: &Json) -> Result<Json> {
             let block = RangeRef::new(CellRef::new(start, r.start.col), r.end);
             shm.sources.retain(|c, _| !block.contains(*c));
         }
+        let moved_sources: Vec<CellRef> = sources.iter().map(|(c, _)| *c).collect();
         shm.sources.extend(sources);
         for (at, cm) in notes {
             shm.comments.insert(at, cm);
@@ -113,6 +114,7 @@ pub(super) fn remove_duplicates(s: &mut Session, p: &Json) -> Result<Json> {
         for c in RangeRef::new(CellRef::new(start, r.start.col), r.end).iter() {
             cx.changed.push((sheet, c));
         }
+        cx.note_sources_moved(sheet, moved_sources);
         Ok(())
     })?;
     let remaining = (r.end.row + 1 - start) as usize - removed;
