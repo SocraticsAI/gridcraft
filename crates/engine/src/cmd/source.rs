@@ -668,6 +668,35 @@ mod tests {
     }
 
     #[test]
+    fn a_paste_into_another_workbook_brings_no_links() {
+        let mut s = s();
+        put(&mut s, "B2", 5.0, "five");
+        // A link's file is relative to the folder of the workbook it is in: in another workbook
+        // it could name a different file, so it stays behind.
+        s.execute("edit.copy", json!({"range": "B2"})).unwrap();
+        s.new_workbook();
+        s.execute("edit.paste", json!({"at": "C3"})).unwrap();
+        let v = s.doc().unwrap().wb.sheet(0).unwrap().value(CellRef::parse("C3").unwrap());
+        assert_eq!(v, gridcraft_core::Value::Number(5.0), "the value is pasted");
+        assert_eq!(locator(&s, "C3"), None);
+        s.execute("edit.pasteSpecial", json!({"what": "values", "at": "D3"})).unwrap();
+        assert_eq!(locator(&s, "D3"), None);
+        // A cut pasted into another workbook doesn't move the link either: the original keeps it.
+        s.execute("window.activate", json!({"index": 0})).unwrap();
+        s.execute("edit.cut", json!({"range": "B2"})).unwrap();
+        s.execute("window.activate", json!({"index": 1})).unwrap();
+        s.execute("edit.paste", json!({"at": "E3"})).unwrap();
+        assert_eq!(locator(&s, "E3"), None);
+        assert_eq!(link_count(&s, "Sheet1"), 0);
+        s.execute("window.activate", json!({"index": 0})).unwrap();
+        assert_eq!(locator(&s, "B2").as_deref(), Some("five"));
+        // Within the workbook a paste still brings it.
+        s.execute("edit.copy", json!({"range": "B2"})).unwrap();
+        s.execute("edit.paste", json!({"at": "B5"})).unwrap();
+        assert_eq!(locator(&s, "B5").as_deref(), Some("five"));
+    }
+
+    #[test]
     fn multi_area_copy_keeps_links() {
         let mut s = s();
         put(&mut s, "A1", 1.0, "one");
