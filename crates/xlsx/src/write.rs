@@ -209,13 +209,13 @@ fn check_sheet_names(wb: &Workbook) -> Result<(), IoError> {
 /// Workbook name written in a PivotChart's link when the file name isn't known.
 const DEFAULT_BOOK_NAME: &str = "Workbook.xlsx";
 
-pub fn write_xlsx(wb: &Workbook, kind: XlsxKind) -> Result<Vec<u8>, IoError> {
-    write_xlsx_named(wb, kind, None)
+pub fn write_xlsx(wb: &Workbook, kind: XlsxKind, options: crate::WriteOptions) -> Result<Vec<u8>, IoError> {
+    write_xlsx_named(wb, kind, None, options)
 }
 
 /// Writes the workbook for the file `book_name` (a bare file name). A PivotChart is bound to its
 /// PivotTable in Excel only when its link starts with the workbook in brackets.
-pub fn write_xlsx_named(wb: &Workbook, kind: XlsxKind, book_name: Option<&str>) -> Result<Vec<u8>, IoError> {
+pub fn write_xlsx_named(wb: &Workbook, kind: XlsxKind, book_name: Option<&str>, options: crate::WriteOptions) -> Result<Vec<u8>, IoError> {
     if wb.sheets.is_empty() {
         return Err(IoError::Format("a workbook needs at least one sheet".into()));
     }
@@ -256,7 +256,9 @@ pub fn write_xlsx_named(wb: &Workbook, kind: XlsxKind, book_name: Option<&str>) 
 
     let mut wb_rels = Rels::default();
     let (sheets_xml, kept, pivots) = write_sheets(wb, &mut out, active, &mut wb_rels);
-    crate::sources::write(wb, &mut out, &mut wb_rels);
+    if !options.omit_sources {
+        crate::sources::write(wb, &mut out, &mut wb_rels);
+    }
 
     let names = write_defined_names(wb, &kept, &out.chart_names);
 
