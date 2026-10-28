@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Interface translations. Command ids and document text stay stable; only interface chrome is
 //! translated. Untranslated labels fall back to English, so coverage can grow incrementally.
 //!
@@ -260,6 +261,9 @@ const JAPANESE: &[(&str, &str)] = &[
     ("Clear Contents", "数式と値のクリア"),
     ("Clear Comments and Notes", "コメントとメモのクリア"),
     ("Clear Hyperlinks", "ハイパーリンクのクリア"),
+    ("Sources", "ソース"),
+    ("Clear Sources", "ソースのクリア"),
+    ("Source Inspector: show cell sources", "ソース インスペクター: セルのソースを表示"),
     ("AutoSum", "オート SUM"),
     ("AutoSum (⌘⇧T)", "オート SUM (⌘⇧T)"),
     ("Flash\nFill", "フラッシュ フィル"),

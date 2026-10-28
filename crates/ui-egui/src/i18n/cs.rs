@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Czech translations for the interface strings in i18n.rs.
 
 pub(super) fn translate(text: &str) -> Option<&'static str> {
@@ -82,6 +83,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "Vymazat obsah",
         "Clear Comments and Notes" => "Vymazat komentáře a poznámky",
         "Clear Hyperlinks" => "Vymazat hypertextové odkazy",
+        "Sources" => "Zdroje",
+        "Clear Sources" => "Vymazat zdroje",
+        "Source Inspector: show cell sources" => "Kontrola zdrojů: zobrazit zdroje buněk",
         "AutoSum" => "Automatický\nsoučet",
         "AutoSum (⌘⇧T)" => "Automatický součet (⌘⇧T)",
         "Flash\nFill" => "Dynamické\ndoplňování",
