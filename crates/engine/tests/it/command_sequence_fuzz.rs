@@ -20,7 +20,11 @@
 //! - every few steps and at the end, an XLSX save and reload (with the recalculation opening does)
 //!   gives the same sheets, formulas and values;
 //! - at the end, undoing everything gives back the starting workbook and redoing everything the
-//!   final one (view state aside), and both keep the Watch Window list, which isn't an edit.
+//!   final one (view state aside), and both keep the Watch Window list, which isn't an edit;
+//! - a cell source link always sits on the content it was set on: each curated `source.set` link
+//!   has a locator of its own, and after every step, after undoing and redoing everything and
+//!   after an XLSX save and reload, every surviving link's cell still holds what it held when it
+//!   was linked (catches a link left on a changed cell, or moved without its value).
 //!
 //! Knobs (environment variables):
 //! - `GRIDCRAFT_FUZZ_SEEDS` (default 6) and `GRIDCRAFT_FUZZ_STEPS` (default 40): the budget. Soak with
@@ -30,7 +34,7 @@
 //!   still fails the same way, printed as `execute` calls ready for a regression test.
 //! - `GRIDCRAFT_FUZZ_KEEP_GOING=1`: report every failing seed instead of stopping at the first.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 use gridcraft_core::{CellRef, MAX_COLS, MAX_ROWS, RangeRef, Value, col_to_letters};
@@ -222,6 +226,21 @@ struct Harness {
     s: Session,
     /// The workbook at the start of the current episode (what undoing everything gives back).
     base: Arc<Workbook>,
+    /// What each curated source link's cell held when it was linked, by the link's locator (each
+    /// curated link has its own: [`LINK_PREFIX`]).
+    linked: HashMap<String, Option<String>>,
+}
+
+/// Locators of the links curated `source.set` steps write, each unique.
+const LINK_PREFIX: &str = "fuzz:";
+
+/// A cell's own content (its formula, or its constant), as `content_diff` compares it; spilled
+/// values aside, since they aren't the cell's own.
+fn own_content(sh: &Sheet, c: CellRef) -> Option<String> {
+    sh.cell(c).filter(|c| has_content(c)).map(|c| match &c.formula {
+        Some(f) => format!("={}", f.text),
+        None => format!("{:?}", c.value),
+    })
 }
 
 fn fail(step: usize, kind: &'static str, what: impl Into<String>) -> Failure {
@@ -245,7 +264,7 @@ impl Harness {
         let mut s = Session::new();
         s.execute("file.new", json!({"sample": sample})).expect("sample opens");
         let base = s.doc().expect("document").wb.clone();
-        Harness { s, base }
+        Harness { s, base, linked: HashMap::new() }
     }
 
     fn wb(&self) -> Arc<Workbook> {
@@ -271,11 +290,44 @@ impl Harness {
             return Err(fail(i, "not undoable", format!("non-undoable `{id}` changed cell content: {diff}")));
         }
         self.check_state(i)?;
+        if id == "source.set" {
+            self.record_links(&after);
+        }
+        self.check_links(i, &after, "")?;
         if (i + 1).is_multiple_of(ROUNDTRIP_EVERY) {
-            guarded(i, "xlsx roundtrip", || roundtrip_diff(&after))?;
+            let back = guarded(i, "xlsx roundtrip", || roundtrip_diff(&after))?;
+            self.check_links(i, &back, " after an XLSX save and reload")?;
         }
         if self.s.doc().expect("document").undo.len() >= EPISODE_UNDO_DEPTH {
             self.end_episode(i)?;
+        }
+        Ok(())
+    }
+
+    /// Remembers what the cell of each curated link not seen before holds now.
+    fn record_links(&mut self, wb: &Workbook) {
+        for sh in &wb.sheets {
+            for (c, l) in sh.sources.iter().filter(|(_, l)| l.locator.starts_with(LINK_PREFIX)) {
+                self.linked.entry(l.locator.clone()).or_insert_with(|| own_content(sh, *c));
+            }
+        }
+    }
+
+    /// Every curated link still sits on what its cell held when it was linked.
+    fn check_links(&self, i: usize, wb: &Workbook, when: &str) -> Result<(), Failure> {
+        for sh in &wb.sheets {
+            for (c, l) in sh.sources.iter() {
+                if let Some(was) = self.linked.get(&l.locator)
+                    && own_content(sh, *c) != *was
+                {
+                    let now = own_content(sh, *c);
+                    return Err(fail(
+                        i,
+                        "source link",
+                        format!("{}!{c}: link {:?} was set on {was:?} but sits on {now:?}{when}", sh.name, l.locator),
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -308,6 +360,7 @@ impl Harness {
         if let Some(diff) = workbook_diff(&self.base, &undone) {
             return Err(fail(i, "undo", format!("undoing all {n} steps doesn't give back the starting workbook: {diff}")));
         }
+        self.check_links(i, &undone, " after undoing everything")?;
         if watch_list(&end) != watch_list(&undone) {
             return Err(fail(i, "undo", format!("undoing all {n} steps changed the Watch Window list (not an edit)")));
         }
@@ -322,7 +375,9 @@ impl Harness {
             return Err(fail(i, "redo", format!("redoing all {n} steps doesn't give back the final workbook: {diff}")));
         }
         self.check_state(i)?;
-        guarded(i, "xlsx roundtrip", || roundtrip_diff(&end))?;
+        self.check_links(i, &self.wb(), " after redoing everything")?;
+        let back = guarded(i, "xlsx roundtrip", || roundtrip_diff(&end))?;
+        self.check_links(i, &back, " after an XLSX save and reload")?;
         let d = self.s.active_mut().expect("document");
         d.undo.clear();
         d.redo.clear();
@@ -459,7 +514,8 @@ fn normalized_formula(f: &Formula) -> String {
 }
 
 /// Save to XLSX, reload (recalculating like opening does) and compare sheets, formulas and values.
-fn roundtrip_diff(wb: &Workbook) -> Result<(), String> {
+/// Returns the reloaded workbook.
+fn roundtrip_diff(wb: &Workbook) -> Result<Workbook, String> {
     let bytes = io::save_bytes(wb, "fuzz.xlsx").map_err(|e| format!("save failed: {e}"))?;
     let (mut back, _) = io::open_bytes("fuzz.xlsx", &bytes).map_err(|e| format!("reload failed: {e}"))?;
     Calc::new().recalc_all(&mut back);
@@ -482,7 +538,7 @@ fn roundtrip_diff(wb: &Workbook) -> Result<(), String> {
     if wb.calc.mode == CalcMode::Automatic && !wb.calc.iterative {
         value_diff(wb, &back, "an XLSX save and reload").map_or(Ok(()), Err)?;
     }
-    Ok(())
+    Ok(back)
 }
 
 /// The Watch Window list, which is workbook state but not an edit (undo keeps it).
@@ -789,7 +845,7 @@ const CURATED: &[(&str, usize)] = &[
     ("formulas.defineName", 2),
     ("formulas.deleteName", 1),
     ("edit.replace", 1),
-    ("source.set", 2),
+    ("source.set", 4),
 ];
 
 fn generate(rng: &mut Rng, s: &Session) -> Step {
@@ -935,16 +991,31 @@ fn curated_params(rng: &mut Rng, wb: &Workbook, id: &str) -> Json {
         },
         "edit.replace" => json!({"what": rng.pick(&["North", "1", "A", "Sales"]), "with": rng.pick(&["South", "2", "B", ""]), "all": true}),
         "source.set" => {
-            let r = near_range(rng);
-            let links: Vec<Json> = (0..r.height())
-                .map(|_| {
+            // Mostly a run of the active sheet's hard-coded numbers (what a host links), so the
+            // invariant that a link stays on its value has links to check; otherwise anywhere.
+            let sh = wb.sheet(wb.active_sheet);
+            let numbers: Vec<CellRef> = sh
+                .map(|sh| sh.cells.iter().filter(|(c, x)| c.row < 200 && x.formula.is_none() && x.value.is_number()).map(|(c, _)| c).collect())
+                .unwrap_or_default();
+            let r = if !numbers.is_empty() && rng.chance(75) {
+                let at = *rng.pick(&numbers);
+                RangeRef::new(at, CellRef::new(at.row + rng.int(0, 3) as u32, at.col + rng.int(0, 1) as u32))
+            } else {
+                near_range(rng)
+            };
+            let links: Vec<Json> = (r.start.row..=r.end.row)
+                .map(|row| {
                     Json::Array(
-                        (0..r.width())
-                            .map(|_| {
-                                if rng.chance(70) {
-                                    // Every third locator carries characters XML can't hold.
-                                    let n = rng.int(1, 99);
-                                    let locator = if n % 3 == 0 { format!("page:{n}\u{0C}\u{01}") } else { format!("page:{n}") };
+                        (r.start.col..=r.end.col)
+                            .map(|col| {
+                                // A formula cell takes no link (`source.set` refuses the whole batch).
+                                let formula = sh.and_then(|sh| sh.cell(CellRef::new(row, col))).is_some_and(|x| x.formula.is_some());
+                                if !formula && rng.chance(80) {
+                                    // Every locator is the link's own; every third also carries
+                                    // characters XML can't hold.
+                                    let id = rng.next();
+                                    let locator =
+                                        if id.is_multiple_of(3) { format!("{LINK_PREFIX}{id:016x}\u{0C}\u{01}") } else { format!("{LINK_PREFIX}{id:016x}") };
                                     json!({"file": "Cash/Statement.pdf", "locator": locator})
                                 } else {
                                     Json::Null
