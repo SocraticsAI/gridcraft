@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 /// Returns the Polish translation for `text`, or `None` so callers fall back to English.
 pub(super) fn translate(text: &str) -> Option<&'static str> {
     Some(match text {
@@ -79,6 +80,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "Wyczyść zawartość",
         "Clear Comments and Notes" => "Wyczyść komentarze i notatki",
         "Clear Hyperlinks" => "Wyczyść hiperlinki",
+        "Sources" => "Źródła",
+        "Clear Sources" => "Wyczyść źródła",
+        "Source Inspector: show cell sources" => "Inspektor źródeł: pokaż źródła komórek",
         "AutoSum" => "Autosumowanie",
         "Flash\nFill" => "Wypełnianie\nbłyskawiczne",
         "Flash Fill" => "Wypełnianie błyskawiczne",

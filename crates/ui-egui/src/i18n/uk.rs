@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Ukrainian translations for the interface strings in i18n.rs.
 
 /// Returns the Ukrainian translation for `text`, or `None` so callers fall back to English.
@@ -81,6 +82,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "Очистити вміст",
         "Clear Comments and Notes" => "Видалити коментарі та нотатки",
         "Clear Hyperlinks" => "Видалити гіперпосилання",
+        "Sources" => "Джерела",
+        "Clear Sources" => "Видалити джерела",
+        "Source Inspector: show cell sources" => "Інспектор джерел: показати джерела клітинок",
         "AutoSum" => "Автосума",
         "Flash\nFill" => "Миттєве\nзаповнення",
         "Flash Fill" => "Миттєве заповнення",

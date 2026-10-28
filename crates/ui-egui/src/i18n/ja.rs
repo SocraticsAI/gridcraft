@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Japanese translations for the interface strings in `i18n.rs`; labels follow Excel for Mac's
 //! Japanese wording, and anything absent falls back to English.
 //!
@@ -87,6 +88,9 @@ pub(super) const CORE: &[(&str, &str)] = &[
     ("Clear Contents", "数式と値のクリア"),
     ("Clear Comments and Notes", "コメントとメモのクリア"),
     ("Clear Hyperlinks", "ハイパーリンクのクリア"),
+    ("Sources", "ソース"),
+    ("Clear Sources", "ソースのクリア"),
+    ("Source Inspector: show cell sources", "ソース インスペクター: セルのソースを表示"),
     ("AutoSum", "オート SUM"),
     ("Flash\nFill", "フラッシュ フィル"),
     ("Flash Fill", "フラッシュ フィル"),

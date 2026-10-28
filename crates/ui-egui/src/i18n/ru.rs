@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Russian translations for the interface strings in i18n.rs.
 
 /// Returns the Russian translation for `text`, or `None` so callers fall back to English.
@@ -85,6 +86,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "Очистить содержимое",
         "Clear Comments and Notes" => "Удалить комментарии и заметки",
         "Clear Hyperlinks" => "Удалить гиперссылки",
+        "Sources" => "Источники",
+        "Clear Sources" => "Удалить источники",
+        "Source Inspector: show cell sources" => "Инспектор источников: показать источники ячеек",
         "AutoSum" => "Автосумма",
         "Flash\nFill" => "Мгновенное\nзаполнение",
         "Flash Fill" => "Мгновенное заполнение",

@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Romanian translations for the interface strings in i18n.rs.
 //!
 //! Written from the plain meaning of the English labels in ordinary Romanian computing vocabulary;
@@ -86,6 +87,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "Golire conținut",
         "Clear Comments and Notes" => "Golire comentarii și note",
         "Clear Hyperlinks" => "Golire hyperlinkuri",
+        "Sources" => "Surse",
+        "Clear Sources" => "Golire surse",
+        "Source Inspector: show cell sources" => "Inspector surse: afișare surse celule",
         "AutoSum" => "Însumare automată",
         "Flash\nFill" => "Completare\nrapidă",
         "Flash Fill" => "Completare rapidă",

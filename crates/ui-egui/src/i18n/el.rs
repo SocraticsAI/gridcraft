@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Greek (el) interface localization for GridCraft.
 //! Command ids, cell references and formula identifiers are not translated.
 //! Source labels are kept verbatim and unmatched labels fall back to English.
@@ -79,6 +80,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "Απαλοιφή περιεχομένων",
         "Clear Comments and Notes" => "Απαλοιφή σχολίων και σημειώσεων",
         "Clear Hyperlinks" => "Απαλοιφή υπερσυνδέσμων",
+        "Sources" => "Πηγές",
+        "Clear Sources" => "Απαλοιφή πηγών",
+        "Source Inspector: show cell sources" => "Επιθεωρητής πηγών: εμφάνιση πηγών κελιών",
         "AutoSum" => "Αυτόματο άθροισμα",
         "Flash\nFill" => "Γρήγορη\nσυμπλήρωση",
         "Flash Fill" => "Γρήγορη συμπλήρωση",

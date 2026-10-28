@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Turkish translations for the interface strings in i18n.rs. Labels follow the wording Turkish
 //! spreadsheet users know; anything absent falls back to English.
 
@@ -82,6 +83,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "İçeriği Temizle",
         "Clear Comments and Notes" => "Açıklamaları ve Notları Temizle",
         "Clear Hyperlinks" => "Köprüleri Temizle",
+        "Sources" => "Kaynaklar",
+        "Clear Sources" => "Kaynakları Temizle",
+        "Source Inspector: show cell sources" => "Kaynak Denetçisi: hücre kaynaklarını göster",
         "AutoSum" => "Otomatik Toplam",
         "Flash\nFill" => "Hızlı\nDoldurma",
         "Flash Fill" => "Hızlı Doldurma",

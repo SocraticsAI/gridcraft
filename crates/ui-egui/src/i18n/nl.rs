@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Dutch translations for the interface strings in i18n.rs.
 
 /// Returns the Dutch translation for `text`, or `None` so callers fall back to English.
@@ -84,6 +85,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "Celinhoud wissen",
         "Clear Comments and Notes" => "Opmerkingen en notities wissen",
         "Clear Hyperlinks" => "Hyperlinks wissen",
+        "Sources" => "Bronnen",
+        "Clear Sources" => "Bronnen wissen",
+        "Source Inspector: show cell sources" => "Broncontrole: celbronnen weergeven",
         "AutoSum" => "AutoSom",
         "Flash\nFill" => "Automatisch\ninvullen",
         "Flash Fill" => "Automatisch invullen",

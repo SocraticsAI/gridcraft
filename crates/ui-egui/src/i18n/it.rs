@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Italian translations for the interface strings in i18n.rs. Labels follow Excel's Italian
 //! wording (sentence case, «Blocca riquadri», «Unisci e allinea al centro»); anything absent falls
 //! back to English.
@@ -83,6 +84,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "Cancella contenuto",
         "Clear Comments and Notes" => "Cancella commenti e note",
         "Clear Hyperlinks" => "Cancella collegamenti ipertestuali",
+        "Sources" => "Origini",
+        "Clear Sources" => "Cancella origini",
+        "Source Inspector: show cell sources" => "Controllo origini: mostra le origini delle celle",
         "AutoSum" => "Somma automatica",
         "Flash\nFill" => "Riempimento\nveloce",
         "Flash Fill" => "Riempimento veloce",

@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Korean translations for the interface strings in i18n.rs.
 
 /// Returns the Korean translation for `text`, or `None` so callers fall back to English.
@@ -85,6 +86,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "내용 지우기",
         "Clear Comments and Notes" => "댓글 및 메모 지우기",
         "Clear Hyperlinks" => "하이퍼링크 지우기",
+        "Sources" => "출처",
+        "Clear Sources" => "출처 지우기",
+        "Source Inspector: show cell sources" => "출처 검사기: 셀 출처 표시",
         "AutoSum" => "자동 합계",
         "Flash\nFill" => "빠른\n채우기",
         "Flash Fill" => "빠른 채우기",

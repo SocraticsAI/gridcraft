@@ -460,6 +460,19 @@ fn a_host_that_does_not_show_sources_gets_no_switch_markers_tint_tips_or_clicks(
 }
 
 #[test]
+fn the_sources_strings_are_translated() {
+    use gridcraft_ui_egui::i18n::Language;
+    for language in Language::ALL.into_iter().filter(|l| *l != Language::En) {
+        for text in ["Sources", "Clear Sources", "Source Inspector: show cell sources"] {
+            assert!(!language.tr(text).is_empty(), "{} {text}", language.code());
+        }
+    }
+    assert_eq!(Language::De.tr("Sources"), "Quellen");
+    assert_eq!(Language::Ja.tr("Clear Sources"), "ソースのクリア");
+    assert_eq!(Language::Es.tr("Source Inspector: show cell sources"), "Inspector de fuentes: mostrar las fuentes de las celdas");
+}
+
+#[test]
 fn clicking_a_linked_cell_of_a_right_to_left_sheet_tells_the_host() {
     let (mut h, clicks) = with_clicks();
     h.state_mut().session.execute("view.rightToLeft", json!({"on": true})).unwrap();

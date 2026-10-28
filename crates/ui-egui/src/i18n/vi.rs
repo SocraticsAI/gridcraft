@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Vietnamese translations for the interface strings in i18n.rs. Labels follow the wording
 //! Vietnamese spreadsheet users know; anything absent falls back to English.
 
@@ -87,6 +88,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "Xóa nội dung",
         "Clear Comments and Notes" => "Xóa chú thích và ghi chú",
         "Clear Hyperlinks" => "Xóa siêu liên kết",
+        "Sources" => "Nguồn",
+        "Clear Sources" => "Xóa nguồn",
+        "Source Inspector: show cell sources" => "Trình kiểm tra nguồn: hiện nguồn của ô",
         "AutoSum" => "Tự động tính tổng",
         "Flash\nFill" => "Điền\nnhanh",
         "Flash Fill" => "Điền nhanh",

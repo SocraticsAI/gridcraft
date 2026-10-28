@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! French translations for the interface strings in i18n.rs.
 
 /// Returns the French translation for `text`, or `None` so callers fall back to English.
@@ -90,6 +91,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "Effacer le contenu",
         "Clear Comments and Notes" => "Effacer les commentaires et les notes",
         "Clear Hyperlinks" => "Effacer les liens hypertexte",
+        "Sources" => "Sources",
+        "Clear Sources" => "Effacer les sources",
+        "Source Inspector: show cell sources" => "Inspecteur de sources : afficher les sources des cellules",
         "AutoSum" => "Somme automatique",
         "Flash\nFill" => "Remplissage\ninstantané",
         "Flash Fill" => "Remplissage instantané",
