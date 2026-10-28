@@ -202,8 +202,9 @@ pub struct Services {
     /// Web: hand PDF bytes to the browser's print flow directly (no download,
     /// no intermediate file) — opens the system print dialog on that PDF.
     pub print: Option<Box<dyn Fn(&[u8])>>,
-    /// A linked cell was clicked (sheet name, A1 cell, and where the cell is: left, top, width, height in the
-    /// canvas's CSS pixels, from its top left); the host shows its source.
+    /// A linked cell was clicked (sheet name, A1 cell, and where the cell is: left, top, width, height from the
+    /// top left of the app's surface, in logical pixels — `UiRequest::SourceClick`'s UI points times the
+    /// interface size, so CSS pixels of the canvas on the web); the host shows its source.
     pub source_click: Option<Box<dyn Fn(&str, &str, Option<[f32; 4]>)>>,
 }
 
