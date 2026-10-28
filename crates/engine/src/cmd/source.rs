@@ -26,6 +26,15 @@ pub fn specs() -> Vec<CommandSpec> {
         ),
         cmd!(query "source.get", "Cell Source", [], None, "{sheet?, cell: \"B2\"} → {link: {file, locator} | null}", has_doc, get_link),
         cmd!("source.clear", "Clear Cell Sources", [], None, "{sheet?, range: \"A1:C3\"} → {cleared}", has_doc, clear_links),
+        cmd!(
+            "source.clearAll",
+            "Clear All Cell Sources",
+            [],
+            None,
+            "{} → {cleared} (every sheet's links, as one undo step)",
+            has_doc,
+            clear_all_links
+        ),
     ]
 }
 
@@ -123,6 +132,21 @@ fn clear_links(s: &mut Session, p: &Json) -> Result<Json> {
     edit(s, |cx| {
         let sh = cx.sheet_mut(sheet)?;
         let cleared: usize = ranges.iter().map(|r| sh.remove_sources_in(*r, |_| true)).sum();
+        Ok(json!({"cleared": cleared}))
+    })
+}
+
+/// Every link on every sheet, as one edit: for a copy to share without the names of the folders
+/// and files its figures came from (a save can also leave them out: `io::WriteOptions`).
+fn clear_all_links(s: &mut Session, _p: &Json) -> Result<Json> {
+    edit(s, |cx| {
+        let linked: Vec<usize> = (0..cx.wb.sheets.len()).filter(|&i| cx.wb.sheet(i).is_some_and(|sh| !sh.sources.is_empty())).collect();
+        let mut cleared = 0;
+        for i in linked {
+            let sh = cx.sheet_mut(i)?;
+            cleared += sh.sources.len();
+            sh.sources = std::sync::Arc::default();
+        }
         Ok(json!({"cleared": cleared}))
     })
 }
@@ -259,6 +283,48 @@ mod tests {
         }
         s.execute("source.set", json!({"range": "A1", "links": [[{"file": "Cash/Bank Statement.pdf", "locator": "page:1"}]]})).unwrap();
         assert_eq!(locator(&s, "A1").as_deref(), Some("page:1"));
+    }
+
+    #[test]
+    fn clear_all_removes_every_sheets_links_in_one_undo_step() {
+        let mut s = s();
+        put(&mut s, "A1", 1.0, "a1");
+        put(&mut s, "B2", 2.0, "b2");
+        s.execute("home.insertSheet", json!({"name": "Other"})).unwrap();
+        s.execute("range.setValues", json!({"sheet": "Other", "range": "C3", "values": [[3]]})).unwrap();
+        s.execute("source.set", json!({"sheet": "Other", "range": "C3", "links": [[link_json("c3")]]})).unwrap();
+        let r = s.execute("source.clearAll", json!({})).unwrap();
+        assert_eq!(r["cleared"], 3);
+        assert_eq!(link_count(&s, "Sheet1"), 0);
+        assert_eq!(link_count(&s, "Other"), 0);
+        let v = s.doc().unwrap().wb.sheet(0).unwrap().value(CellRef::parse("B2").unwrap());
+        assert_eq!(v, gridcraft_core::Value::Number(2.0), "the values stay");
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(locator(&s, "A1").as_deref(), Some("a1"));
+        assert_eq!(locator_on(&s, "Other", "C3").as_deref(), Some("c3"));
+        // A locked cell's link on a protected sheet is held still, as Clear Sources holds it.
+        s.execute("review.protectSheet", json!({"sheet": "Other"})).unwrap();
+        assert!(s.execute("source.clearAll", json!({})).is_err());
+        assert_eq!(link_count(&s, "Sheet1"), 2, "a refused clear changes nothing");
+        // A workbook without links clears nothing.
+        let mut empty = self::s();
+        assert_eq!(empty.execute("source.clearAll", json!({})).unwrap()["cleared"], 0);
+    }
+
+    #[test]
+    fn a_save_can_leave_the_links_out_while_the_workbook_keeps_them() {
+        let mut s = s();
+        put(&mut s, "A1", 1.0, "a1");
+        let wb = s.doc().unwrap().wb.clone();
+        for name in ["book.xlsx", "book.json"] {
+            let bytes = crate::io::save_bytes_with(&wb, name, crate::io::WriteOptions { omit_sources: true }).unwrap();
+            let (back, _) = crate::io::open_bytes(name, &bytes).unwrap();
+            assert!(back.sheets[0].sources.is_empty(), "{name}");
+            assert_eq!(back.sheets[0].value(CellRef::parse("A1").unwrap()), gridcraft_core::Value::Number(1.0), "{name}");
+            let (kept, _) = crate::io::open_bytes(name, &crate::io::save_bytes(&wb, name).unwrap()).unwrap();
+            assert_eq!(kept.sheets[0].sources.len(), 1, "{name}: an ordinary save keeps them");
+        }
+        assert_eq!(locator(&s, "A1").as_deref(), Some("a1"), "the open workbook keeps its links");
     }
 
     #[test]

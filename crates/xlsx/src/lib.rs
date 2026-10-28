@@ -132,12 +132,25 @@ impl XlsxKind {
 
 /// Writes a workbook as an `.xlsx` package, or as an `.xlsm` one when it holds a VBA project.
 pub fn write_xlsx(wb: &Workbook) -> Result<Vec<u8>, IoError> {
-    write::write_xlsx(wb, if wb.vba_project.is_some() { XlsxKind::MacroWorkbook } else { XlsxKind::Workbook })
+    write::write_xlsx(wb, if wb.vba_project.is_some() { XlsxKind::MacroWorkbook } else { XlsxKind::Workbook }, WriteOptions::default())
 }
 
 /// Writes a workbook as the given member of the `.xlsx` family.
 pub fn write_xlsx_as(wb: &Workbook, kind: XlsxKind) -> Result<Vec<u8>, IoError> {
-    write::write_xlsx(wb, kind)
+    write::write_xlsx(wb, kind, WriteOptions::default())
+}
+
+/// What a save leaves out of the package. The default leaves out nothing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WriteOptions {
+    /// Leave out the cell source links (`Sheet::sources`), which name the folders and files the
+    /// figures came from: for a copy to share outside.
+    pub omit_sources: bool,
+}
+
+/// [`write_xlsx_as`], with what to leave out.
+pub fn write_xlsx_with(wb: &Workbook, kind: XlsxKind, options: WriteOptions) -> Result<Vec<u8>, IoError> {
+    write::write_xlsx(wb, kind, options)
 }
 
 /// CSV import options.

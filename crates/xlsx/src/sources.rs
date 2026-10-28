@@ -373,6 +373,23 @@ mod tests {
     }
 
     #[test]
+    fn a_save_can_leave_the_links_out() {
+        let mut wb = Workbook::new();
+        let s0 = wb.sheet_mut(0).unwrap();
+        s0.set_value(CellRef::new(1, 1), 5.0.into());
+        s0.sources_mut().insert(CellRef::new(1, 1), link("page:3"));
+        let without = crate::write_xlsx_with(&wb, crate::XlsxKind::Workbook, crate::WriteOptions { omit_sources: true }).unwrap();
+        assert!(sources_parts(&without).is_empty());
+        let mut z = zip::ZipArchive::new(std::io::Cursor::new(&without)).unwrap();
+        assert!((0..z.len()).all(|i| !z.by_index(i).unwrap().name().starts_with("customXml/")), "no custom XML part at all");
+        let (back, _) = read_xlsx(&without).unwrap();
+        assert!(back.sheets[0].sources.is_empty());
+        assert_eq!(back.sheets[0].value(CellRef::new(1, 1)), gridcraft_core::Value::Number(5.0), "the values are saved");
+        // The default keeps them.
+        assert_eq!(sources_parts(&crate::write_xlsx_with(&wb, crate::XlsxKind::Workbook, crate::WriteOptions::default()).unwrap()).len(), 1);
+    }
+
+    #[test]
     fn a_workbook_without_links_writes_no_sources_part() {
         let bytes = write_xlsx(&Workbook::new()).unwrap();
         assert!(sources_parts(&bytes).is_empty());

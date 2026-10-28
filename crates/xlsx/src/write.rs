@@ -190,7 +190,7 @@ fn check_sheet_names(wb: &Workbook) -> Result<(), IoError> {
     Ok(())
 }
 
-pub fn write_xlsx(wb: &Workbook, kind: XlsxKind) -> Result<Vec<u8>, IoError> {
+pub fn write_xlsx(wb: &Workbook, kind: XlsxKind, options: crate::WriteOptions) -> Result<Vec<u8>, IoError> {
     if wb.sheets.is_empty() {
         return Err(IoError::Format("a workbook needs at least one sheet".into()));
     }
@@ -257,7 +257,9 @@ pub fn write_xlsx(wb: &Workbook, kind: XlsxKind) -> Result<Vec<u8>, IoError> {
         sheet_id += 1;
     }
     sheets_xml.push_str(&kept.sheet_entries(wb.sheets.len(), true, sheet_id).0);
-    crate::sources::write(wb, &mut out, &mut wb_rels);
+    if !options.omit_sources {
+        crate::sources::write(wb, &mut out, &mut wb_rels);
+    }
 
     // Defined names, then print areas and titles.
     let mut names = String::new();

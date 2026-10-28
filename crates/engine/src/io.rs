@@ -1,10 +1,12 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and a save can leave out cell source links. See MODIFICATIONS.md.
 //! Opening and saving files: XLSX, legacy XLS import, XLSB and ODS data import, CSV/TSV, JSON (debug), HTML export.
 
 use std::fmt::Write as _;
 
 use gridcraft_core::{CellRef, RangeRef};
 use gridcraft_model::{Sheet, Workbook};
+/// What a save leaves out (`save_bytes_with`): `omit_sources` for a copy without cell source links.
+pub use gridcraft_xlsx::WriteOptions;
 
 use crate::{EngineError, Result};
 
@@ -211,11 +213,32 @@ pub fn save_bytes(wb: &Workbook, path: &str) -> Result<Vec<u8>> {
 
 /// Encodes a workbook as `kind`, whatever `path`'s extension says.
 pub fn save_bytes_as(wb: &Workbook, path: &str, kind: FileKind) -> Result<Vec<u8>> {
+    save_bytes_as_with(wb, path, kind, WriteOptions::default())
+}
+
+/// [`save_bytes`], with what to leave out: `omit_sources` saves an `.xlsx` or `.json` copy
+/// without its cell source links (the workbook itself keeps them).
+pub fn save_bytes_with(wb: &Workbook, path: &str, options: WriteOptions) -> Result<Vec<u8>> {
+    let Some(kind) = FileKind::from_path(path) else { return save_bytes(wb, path) };
+    save_bytes_as_with(wb, path, kind, options)
+}
+
+/// [`save_bytes_as`], with what to leave out.
+pub fn save_bytes_as_with(wb: &Workbook, path: &str, kind: FileKind, options: WriteOptions) -> Result<Vec<u8>> {
+    if options.omit_sources && kind == FileKind::Json && wb.sheets.iter().any(|sh| !sh.sources.is_empty()) {
+        let mut copy = wb.clone();
+        for sh in copy.sheets.iter_mut().filter(|sh| !sh.sources.is_empty()) {
+            std::sync::Arc::make_mut(sh).sources = std::sync::Arc::default();
+        }
+        return save_bytes_as_with(&copy, path, kind, WriteOptions::default());
+    }
     let sheet = wb.active_sheet;
     match kind {
         // The extension picks the package kind; only the macro-enabled kinds (.xlsm, .xltm) carry
         // the VBA project, so any other name saves without it, as Excel does.
-        FileKind::Xlsx => gridcraft_xlsx::write_xlsx_as(wb, gridcraft_xlsx::XlsxKind::from_path(path)).map_err(|e| EngineError::Other(e.to_string())),
+        FileKind::Xlsx => {
+            gridcraft_xlsx::write_xlsx_with(wb, gridcraft_xlsx::XlsxKind::from_path(path), options).map_err(|e| EngineError::Other(e.to_string()))
+        }
         FileKind::Xls => {
             Err(EngineError::Other("Excel 97-2003 (.xls) is supported for import only. Save as .xlsx or another supported export format.".into()))
         }
