@@ -1161,8 +1161,9 @@ fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
                         if let Some(picture) = new_picture {
                             cx.sheet_mut(dest_sheet)?.cell_pictures.insert(dest, picture);
                         }
-                        // A pasted value brings its source link; a pasted reference (Paste Link) or
-                        // a value combined with what was there (an operation) has none.
+                        // A pasted value brings its source link; a pasted reference (Paste Link), a
+                        // value combined with what was there (an operation) or one from another
+                        // workbook (whose links are relative to its own folder) has none.
                         if matches!(
                             what,
                             What::All
@@ -1172,7 +1173,7 @@ fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
                                 | What::Values
                                 | What::ValuesAndNumberFormats
                         ) {
-                            let kept = if link || op != "none" { None } else { src_source };
+                            let kept = if link || op != "none" || !same_doc { None } else { src_source };
                             let pasted = kept.is_some();
                             let sh = cx.sheet_mut(dest_sheet)?;
                             match kept {
