@@ -420,8 +420,9 @@ pub enum UiRequest {
     InsertName(String),
     OpenUrl(String),
     /// The user clicked a linked cell: the host shows its source (sheet name, A1 cell). `rect` is where the
-    /// cell is on screen when the UI knows it: left, top, width and height in UI points from the window's top
-    /// left, so the host can put what it shows beside the cell.
+    /// cell is on screen when the UI knows it: left, top, width and height in UI points (egui's units, before
+    /// the interface size scales them) from the top left of the UI, so the host can put what it shows beside
+    /// the cell. The egui frontend hands it to `Services::source_click` in logical pixels instead.
     SourceClick {
         sheet: String,
         cell: String,
