@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: the Sources switch at the start of the horizontal scrollbar's share, and the New Sheet button right after the last tab. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: with `Chrome::sources`, the Sources switch at the start of the horizontal scrollbar's share, and the New Sheet button right after the last tab. See MODIFICATIONS.md.
 //! Sheet tabs and the status bar.
 
 use std::sync::Arc;
@@ -94,7 +94,10 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
             // takes the 32 px back and pushes the button into the scrollbar's share, where it sat
             // before it moved into this section; the tabs still stop at the section's edge.
             let active_width = sheets.iter().zip(&tab_widths).find(|((.., active), _)| *active).map_or(0.0, |(_, w)| *w);
-            let tabs_width = tabs_content.min((section - NEW_SHEET_WIDTH).max(active_width).min(section).max(100.0));
+            // A host that doesn't show sources ([`crate::Chrome::sources`]) gets the bar as upstream
+            // draws it: the tabs take their whole share and New Sheet comes after it.
+            let tabs_width =
+                if app.chrome.sources { tabs_content.min((section - NEW_SHEET_WIDTH).max(active_width).min(section).max(100.0)) } else { section };
             // Reveal the selected sheet after navigation or layout changes, but
             // allow browsing other tabs without snapping back on every frame.
             let reveal_key = egui::Id::new((d.uid, d.wb.active_sheet, &sheets, tabs_width.to_bits()));
@@ -242,16 +245,18 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
             if new_sheet.clicked() {
                 app.run_or_alert("home.insertSheet", json!({}));
             }
-            let sources_left = (section_start + section).max(ui.cursor().left()) + SOURCES_MARGIN / 2.0;
-            ui.add_space(sources_left - ui.cursor().left());
-            // The scrollbar keeps a usable width: a short bar shows the switch without its label.
-            let room = ui.available_width() - SOURCES_MARGIN / 2.0 - MIN_SCROLLBAR;
-            let show_label = crate::widgets::small_switch_width(ui, sources_label, true) <= room;
-            let on = app.ui.source_inspector;
-            if crate::widgets::small_switch(ui, on, sources_label, "Source Inspector: show cell sources", show_label).clicked() {
-                app.run_or_alert("view.sourceInspector", json!({}));
+            if app.chrome.sources {
+                let sources_left = (section_start + section).max(ui.cursor().left()) + SOURCES_MARGIN / 2.0;
+                ui.add_space(sources_left - ui.cursor().left());
+                // The scrollbar keeps a usable width: a short bar shows the switch without its label.
+                let room = ui.available_width() - SOURCES_MARGIN / 2.0 - MIN_SCROLLBAR;
+                let show_label = crate::widgets::small_switch_width(ui, sources_label, true) <= room;
+                let on = app.ui.source_inspector;
+                if crate::widgets::small_switch(ui, on, sources_label, "Source Inspector: show cell sources", show_label).clicked() {
+                    app.run_or_alert("view.sourceInspector", json!({}));
+                }
+                ui.add_space(SOURCES_MARGIN / 2.0);
             }
-            ui.add_space(SOURCES_MARGIN / 2.0);
             // The track ends where the grid does, so it stops under the vertical scrollbar.
             let avail = ui.available_rect_before_wrap();
             let right = app.grid.rect.map_or(avail.right(), |r| r.right()).min(avail.right());

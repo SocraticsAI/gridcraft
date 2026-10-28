@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch, cell source markers and the Source Inspector. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch, cell source markers and the Source Inspector (shown with `Chrome::sources`). See MODIFICATIONS.md.
 //! GridCraft's egui frontend: an Excel-style window (title bar with Quick Access Toolbar,
 //! ribbon, formula bar, grid, sheet tabs, status bar) over `gridcraft-engine`.
 //!
@@ -233,6 +233,11 @@ pub struct Chrome {
     /// The ribbon's Automate tab and its dialogs (Macros, Command Palette, Agent Control, Action
     /// Journal, About), however they are reached: Alt+F8, the VBA notice, `ui.ribbonTab`.
     pub automate: bool,
+    /// Cell source links on screen: the Sources switch in the sheet-tab bar (with New Sheet
+    /// following the last tab), the markers, tint, tooltip and click of the Source Inspector, and
+    /// Clear Sources in the ribbon. Off by default: the tab bar is then as upstream draws it, and
+    /// links stay in the workbook and its file without showing.
+    pub sources: bool,
 }
 
 /// The dialogs the Automate tab opens; [`Chrome::automate`] turns them off with it.
@@ -240,7 +245,7 @@ pub const AUTOMATE_DIALOGS: [&str; 5] = ["macros", "commandSearch", "agents", "j
 
 impl Default for Chrome {
     fn default() -> Self {
-        Chrome { title_bar: true, file_tab: true, automate: true }
+        Chrome { title_bar: true, file_tab: true, automate: true, sources: false }
     }
 }
 
@@ -300,6 +305,14 @@ pub struct SheetApp {
     /// holding other text. Once the cut has been pasted, Paste leaves this text alone.
     cut_text: Option<String>,
     pub started: f64,
+}
+
+impl SheetApp {
+    /// Whether the Source Inspector shows: the host shows sources ([`Chrome::sources`]) and the
+    /// Sources switch is on ([`UiState::source_inspector`]).
+    pub fn sources_shown(&self) -> bool {
+        self.chrome.sources && self.ui.source_inspector
+    }
 }
 
 impl SheetApp {

@@ -1,7 +1,8 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
 //! The Source Inspector: markers on linked hard-coded numbers only (hovering one names the value's source),
 //! a plain click on a linked value tells the host, and the active linked value is tinted. Formulas have
-//! none. The Sources switch in the sheet-tab bar turns it all off.
+//! none. The Sources switch in the sheet-tab bar turns it all off. A host shows it all with
+//! `Chrome::sources`.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -11,7 +12,7 @@ use egui_kittest::kittest::Queryable;
 use gridcraft_engine::Session;
 use gridcraft_engine::core::CellRef;
 use gridcraft_engine::model::SourceLink;
-use gridcraft_ui_egui::{Services, SheetApp, UiState, grid::Geo, source_marks, theme::Tokens};
+use gridcraft_ui_egui::{Chrome, Services, SheetApp, UiState, grid::Geo, source_marks, theme::Tokens};
 use serde_json::json;
 
 type Harness = egui_kittest::Harness<'static, SheetApp>;
@@ -38,7 +39,12 @@ fn harness(session: Session, services: Services) -> Harness {
             app.logic(ui.ctx());
             app.ui(ui);
         },
-        SheetApp::new(session, services),
+        {
+            let mut app = SheetApp::new(session, services);
+            // Ares shows sources; the default (off) is checked on its own below.
+            app.chrome.sources = true;
+            app
+        },
     );
     h.run_steps(4);
     h
@@ -425,6 +431,32 @@ fn turning_the_inspector_off_hides_markers_tint_and_tips_and_clicks_open_nothing
     assert_eq!(active(&h), "D2");
     let wb = &h.state().session.active().unwrap().wb;
     assert_eq!(wb.active().unwrap().sources.len(), 2, "the links are untouched");
+}
+
+#[test]
+fn a_host_that_does_not_show_sources_gets_no_switch_markers_tint_tips_or_clicks() {
+    assert!(!Chrome::default().sources, "off unless the host turns it on");
+    let (mut h, clicks) = with_clicks();
+    h.state_mut().chrome = Chrome::default();
+    let t = Tokens::light();
+    select(&mut h, "B2");
+    assert!(h.state().ui.source_inspector, "the switch's own setting is untouched");
+    assert!(h.query_by_label("Sources").is_none(), "no Sources switch in the sheet-tab bar");
+    assert!(marks(&h, t.sourced_mark).is_empty(), "no markers");
+    assert!(rects(&h, t.source_selected_fill).is_empty(), "no tint");
+    let at = marker_center(&h, "D2");
+    h.input_mut().events.push(Event::PointerMoved(at));
+    h.run_steps(2);
+    assert_eq!(h.state().grid.source_tip, None, "no tooltip");
+    let at = cell_rect(&h, "D2").center();
+    click(&mut h, at);
+    assert!(clicks.borrow().is_empty(), "a click on a linked cell only selects it");
+    assert_eq!(h.state().session.active().unwrap().wb.active().unwrap().sources.len(), 2, "the links stay in the workbook");
+    // Turned on, it all comes back.
+    h.state_mut().chrome.sources = true;
+    h.run_steps(2);
+    assert!(h.query_by_label("Sources").is_some());
+    assert_eq!(marks(&h, t.sourced_mark).len(), 2);
 }
 
 #[test]

@@ -67,11 +67,11 @@ pub fn hit(geo: &Geo, wb: &Workbook, si: usize, sh: &Sheet, p: Pos2) -> Option<C
     marker_rect(geo, sh, anchor)?.contains(p).then_some(anchor)
 }
 
-/// `c` (its merged area's anchor) when the Source Inspector shows it as linked: the inspector is
-/// on, the view is Normal, no cell is being edited and it holds a linked hard-coded number. The
+/// `c` (its merged area's anchor) when the Source Inspector shows it as linked: the host shows
+/// sources and the inspector is on (`SheetApp::sources_shown`), the view is Normal, no cell is being edited and it holds a linked hard-coded number. The
 /// active cell then gets the tint, and a click on it shows its source.
 pub fn linked_at(app: &SheetApp, geo: &Geo, si: usize, sh: &Sheet, c: CellRef) -> Option<CellRef> {
-    if !app.ui.source_inspector || geo.paper.is_some() || app.editor.is_some() {
+    if !app.sources_shown() || geo.paper.is_some() || app.editor.is_some() {
         return None;
     }
     let d = app.session.active()?;
