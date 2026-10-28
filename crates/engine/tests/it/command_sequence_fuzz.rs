@@ -1014,8 +1014,11 @@ fn curated_params(rng: &mut Rng, wb: &Workbook, id: &str) -> Json {
                                     // Every locator is the link's own; every third also carries
                                     // characters XML can't hold.
                                     let id = rng.next();
-                                    let locator =
-                                        if id.is_multiple_of(3) { format!("{LINK_PREFIX}{id:016x}\u{0C}\u{01}") } else { format!("{LINK_PREFIX}{id:016x}") };
+                                    let locator = if id.is_multiple_of(3) {
+                                        format!("{LINK_PREFIX}{id:016x}\u{0C}\u{01}")
+                                    } else {
+                                        format!("{LINK_PREFIX}{id:016x}")
+                                    };
                                     json!({"file": "Cash/Statement.pdf", "locator": locator})
                                 } else {
                                     Json::Null
