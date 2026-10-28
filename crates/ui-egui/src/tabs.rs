@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: the Sources switch at the start of the horizontal scrollbar's share, and New Sheet named for assistive tech. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: with `Chrome::sources`, the Sources switch at the start of the horizontal scrollbar's share; New Sheet named for assistive tech. See MODIFICATIONS.md.
 //! Sheet tabs and the status bar.
 
 use std::sync::Arc;
@@ -319,18 +319,21 @@ pub fn sheet_tabs(app: &mut SheetApp, ui: &mut Ui) {
             // don't fill stays empty before it.
             let mut split_left =
                 share.map_or(avail.left(), |share| (bar_left + bar_width * share).min(right - SPLIT_WIDTH - MIN_TRACK).max(avail.left()));
-            // The Sources switch starts the scrollbar's share, before the handle. The scrollbar keeps
-            // a usable width: a short bar shows the switch without its label.
-            let sources_label = app.ui.language.tr("Sources");
-            ui.add_space(split_left + SOURCES_MARGIN / 2.0 - ui.cursor().left());
-            let room = right - ui.cursor().left() - SOURCES_MARGIN / 2.0 - SPLIT_WIDTH - MIN_SCROLLBAR;
-            let show_label = crate::widgets::small_switch_width(ui, sources_label, true) <= room;
-            let on = app.ui.source_inspector;
-            if crate::widgets::small_switch(ui, on, sources_label, "Source Inspector: show cell sources", show_label).clicked() {
-                app.run_or_alert("view.sourceInspector", json!({}));
+            // With [`crate::Chrome::sources`], the Sources switch starts the scrollbar's share, before
+            // the handle; without it the bar is as upstream draws it. The scrollbar keeps a usable
+            // width: a short bar shows the switch without its label.
+            if app.chrome.sources {
+                let sources_label = app.ui.language.tr("Sources");
+                ui.add_space(split_left + SOURCES_MARGIN / 2.0 - ui.cursor().left());
+                let room = right - ui.cursor().left() - SOURCES_MARGIN / 2.0 - SPLIT_WIDTH - MIN_SCROLLBAR;
+                let show_label = crate::widgets::small_switch_width(ui, sources_label, true) <= room;
+                let on = app.ui.source_inspector;
+                if crate::widgets::small_switch(ui, on, sources_label, "Source Inspector: show cell sources", show_label).clicked() {
+                    app.run_or_alert("view.sourceInspector", json!({}));
+                }
+                ui.add_space(SOURCES_MARGIN / 2.0);
+                split_left = ui.cursor().left();
             }
-            ui.add_space(SOURCES_MARGIN / 2.0);
-            split_left = ui.cursor().left();
             let split = Rect::from_min_max(pos2(split_left, avail.top()), pos2(split_left + SPLIT_WIDTH, avail.bottom()));
             tab_split_handle(app, ui, split, (bar_left, bar_width), right, uid, &t);
             let track = Rect::from_min_max(pos2(split.right(), avail.center().y - 7.0), pos2(right, avail.center().y + 7.0));

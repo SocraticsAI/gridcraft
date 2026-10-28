@@ -408,7 +408,7 @@ fn paint_panes(input: PanesInput<'_>, cf: &mut CfCache) -> Vec<PaneQuad> {
         }
         let p = painter.with_clip_rect(*clip);
         paint_quadrant(QuadrantPaint { painter: &p, geo, workbook: wb, sheet_index: si, sheet: sh, rows: *rows, cols: *cols, cf, tokens: t, tint });
-        if app.ui.source_inspector {
+        if app.sources_shown() {
             crate::source_marks::paint_quadrant(wb, &p, geo, si, sh, *rows, *cols, t);
         }
         paint_selection(SelectionPaintInput { painter: &p, geo, sheet: sh, selection: sel, outline, tokens: t, app, rows: *rows, cols: *cols });
@@ -733,7 +733,7 @@ pub(crate) fn paint_overlays(input: OverlayInput<'_>) {
     // painting cells).
     let marker = match ui.ctx().pointer_hover_pos() {
         Some(pos)
-            if app.ui.source_inspector && app.editor.is_none() && app.grid.drag == Drag::None && ui.ctx().layer_id_at(pos) == Some(ui.layer_id()) =>
+            if app.sources_shown() && app.editor.is_none() && app.grid.drag == Drag::None && ui.ctx().layer_id_at(pos) == Some(ui.layer_id()) =>
         {
             let pos = geo.mirror_pos(pos);
             crate::source_marks::hit(geo, wb, si, sh, pos)

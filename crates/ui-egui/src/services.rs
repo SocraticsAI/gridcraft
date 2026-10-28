@@ -64,6 +64,10 @@ pub struct Chrome {
     /// The ribbon's Automate tab and its dialogs (Macros, Command Palette, Agent Control, Action
     /// Journal, About), however they are reached: Alt+F8, the VBA notice, `ui.ribbonTab`.
     pub automate: bool,
+    /// Cell source links on screen: the Sources switch in the sheet-tab bar, the markers, tint, tooltip and click of the Source Inspector, and
+    /// Clear Sources in the ribbon. Off by default: the tab bar is then as upstream draws it, and
+    /// links stay in the workbook and its file without showing.
+    pub sources: bool,
 }
 
 /// The dialogs the Automate tab opens; [`Chrome::automate`] turns them off with it.
@@ -71,6 +75,6 @@ pub const AUTOMATE_DIALOGS: [&str; 5] = ["macros", "commandSearch", "agents", "j
 
 impl Default for Chrome {
     fn default() -> Self {
-        Chrome { title_bar: true, file_tab: true, automate: true }
+        Chrome { title_bar: true, file_tab: true, automate: true, sources: false }
     }
 }

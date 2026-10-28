@@ -500,18 +500,17 @@ pub(super) fn home(app: &mut SheetApp, ui: &mut Ui) {
             keytip(app, ui, sequence, clear.rect.center_bottom());
         }
         egui::Popup::menu(&clear).show(|ui| {
-            menu_items(
-                app,
-                ui,
-                &[
-                    ("Clear All", "edit.clearAll", json!({})),
-                    ("Clear Formats", "edit.clearFormats", json!({})),
-                    ("Clear Contents", "edit.clearContents", json!({})),
-                    ("Clear Comments and Notes", "edit.clearComments", json!({})),
-                    ("Clear Hyperlinks", "edit.clearHyperlinks", json!({})),
-                    ("Clear Sources", "edit.clearSources", json!({})),
-                ],
-            );
+            let mut items = vec![
+                ("Clear All", "edit.clearAll", json!({})),
+                ("Clear Formats", "edit.clearFormats", json!({})),
+                ("Clear Contents", "edit.clearContents", json!({})),
+                ("Clear Comments and Notes", "edit.clearComments", json!({})),
+                ("Clear Hyperlinks", "edit.clearHyperlinks", json!({})),
+            ];
+            if app.chrome.sources {
+                items.push(("Clear Sources", "edit.clearSources", json!({})));
+            }
+            menu_items(app, ui, &items);
         });
     });
     let sf = big_button(ui, Icon::SortFilter, "Sort &\nFilter", "Sort & Filter", true);

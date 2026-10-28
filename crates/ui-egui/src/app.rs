@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: `SheetApp::sources_shown` (cell source links). See MODIFICATIONS.md.
 #[cfg(test)]
 use super::clock::monotonic_ms;
 use super::clock::now_ms;
@@ -24,6 +25,12 @@ mod quit;
 mod view;
 
 impl SheetApp {
+    /// Whether the Source Inspector shows: the host shows sources ([`crate::Chrome::sources`]) and
+    /// the Sources switch is on ([`crate::UiState::source_inspector`]).
+    pub fn sources_shown(&self) -> bool {
+        self.chrome.sources && self.ui.source_inspector
+    }
+
     /// Constructs a `SheetApp` with default UI, grid, printing, control and screenshot state and the caller's session and services.
     pub fn new(session: Session, services: Services) -> SheetApp {
         SheetApp {
