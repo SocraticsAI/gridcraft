@@ -696,6 +696,44 @@ mod tests {
         assert_eq!(locator(&s, "B5").as_deref(), Some("five"));
     }
 
+    /// The content of `cell` on the active sheet, as the link invariant compares it.
+    fn content(s: &Session, cell: &str) -> Option<String> {
+        let wb = &s.doc().unwrap().wb;
+        wb.active().unwrap().cell(CellRef::parse(cell).unwrap()).map(|c| format!("{:?} {:?}", c.formula.as_ref().map(|f| &f.text), c.value))
+    }
+
+    #[test]
+    fn a_link_moved_into_a_table_header_row_goes_when_the_header_rewrites_its_value() {
+        // Found by the fuzz invariant (seed 32): deleting the grades table's header rows moves a
+        // linked 80 into the header row, and the header sync turns it into the text "80".
+        let mut s = Session::new();
+        s.execute("file.new", json!({"sample": "grades"})).unwrap();
+        let before = content(&s, "E3");
+        s.execute("source.set", json!({"range": "E3", "links": [[link_json("eighty")]]})).unwrap();
+        s.execute("home.deleteRows", json!({"rows": "1:2"})).unwrap();
+        assert_ne!(content(&s, "E1"), before, "the header sync did rewrite it (else this test proves nothing)");
+        assert_eq!(locator_on(&s, "Grades", "E1"), None, "a link stays only on the value it was set on");
+        s.execute("edit.undo", json!({})).unwrap();
+        assert_eq!(locator_on(&s, "Grades", "E3").as_deref(), Some("eighty"));
+    }
+
+    #[test]
+    fn a_link_moved_onto_a_cell_the_same_edit_then_rewrites_goes() {
+        // Found by the fuzz invariant (seed 41): a row delete takes a table's header row and moves
+        // a linked empty cell to where the table's new header row is written ("Column2").
+        let mut s = s();
+        s.execute("source.set", json!({"range": "E1:E2", "links": [[null], [link_json("empty")]]})).unwrap();
+        s.execute("insert.table", json!({"header": true, "range": "D1:F1"})).unwrap();
+        s.execute("home.insertCells", json!({"range": "C1:G8", "shift": "down"})).unwrap();
+        s.execute("table.totalRow", json!({"on": true, "table": "Table1"})).unwrap();
+        s.execute("home.deleteRows", json!({"rows": "7:9"})).unwrap();
+        let wb = &s.doc().unwrap().wb;
+        let sh = wb.active().unwrap();
+        for (c, l) in sh.sources.iter() {
+            assert_eq!(sh.cell(*c).filter(|x| !x.value.is_empty() || x.formula.is_some()), None, "{c}: link {} was set on an empty cell", l.locator);
+        }
+    }
+
     #[test]
     fn multi_area_copy_keeps_links() {
         let mut s = s();

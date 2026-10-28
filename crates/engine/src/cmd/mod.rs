@@ -24,7 +24,7 @@ pub mod spelling;
 pub mod view;
 pub mod whatif;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use gridcraft_calc::Key;
 use gridcraft_core::{CellRef, RangeRef};
@@ -319,11 +319,12 @@ pub struct Ctx<'a> {
     /// The command applied sheet protection itself (row/column inserts and deletes the
     /// protection allows), so cells it shifts aren't refused as edits of locked cells.
     pub protection_checked: bool,
-    /// Addresses (sheet name, cell) a source link was moved or written to by this command, from
-    /// [`note_sources_moved`](Ctx::note_sources_moved). A link is new at such an address, so
-    /// [`drop_overwritten_sources`] leaves it alone instead of reading the changed content under
-    /// it as the cell having been typed over.
-    pub sources_moved: Vec<(String, CellRef)>,
+    /// Addresses (sheet name, cell) a source link was moved or written to by this command, with
+    /// the cell's content when it was noted, from [`note_sources_moved`](Ctx::note_sources_moved).
+    /// A link is new at such an address, so [`drop_overwritten_sources`] doesn't read the content
+    /// that moved in with it as the cell having been typed over; it drops the link only when the
+    /// rest of the command rewrote that content (a table's header sync, say).
+    pub sources_moved: Vec<(String, CellRef, Option<gridcraft_model::Cell>)>,
 }
 
 pub(crate) fn edit<R>(s: &mut Session, f: impl FnOnce(&mut Ctx) -> Result<R>) -> Result<R> {
@@ -401,12 +402,38 @@ pub(crate) fn commit<R>(d: &mut DocState, f: impl FnOnce(&mut Ctx) -> Result<R>)
 /// changed, so the scan is over those; only a structural edit, which recalculates everything
 /// instead of listing them, scans the sheet's links. Either way there's no work when no sheet had
 /// any link.
-fn drop_overwritten_sources(old: &Workbook, new: &mut Workbook, changed: &[Key], structural: bool, moved: &[(String, CellRef)]) {
+fn drop_overwritten_sources(
+    old: &Workbook,
+    new: &mut Workbook,
+    changed: &[Key],
+    structural: bool,
+    moved: &[(String, CellRef, Option<gridcraft_model::Cell>)],
+) {
     if old.sheets.iter().all(|sh| sh.sources.is_empty()) {
         return;
     }
-    // Addresses this command put a link at itself: the link there is new, whatever it replaced.
-    let placed: HashSet<(&str, CellRef)> = moved.iter().map(|(n, c)| (n.as_str(), *c)).collect();
+    // Addresses this command put a link at itself, with what the cell held then (the last note
+    // wins): the link there is new, whatever it replaced, but whatever the command wrote over that
+    // content afterwards still drops it.
+    let mut placed: HashMap<(&str, CellRef), Option<&gridcraft_model::Cell>> = HashMap::new();
+    for (n, c, content) in moved {
+        placed.insert((n.as_str(), *c), content.as_ref());
+    }
+    let mut rewritten: Vec<(usize, CellRef)> = Vec::new();
+    for (&(name, c), &noted) in &placed {
+        if let Some(i) = new.sheet_index(name)
+            && let Some(sh) = new.sheets.get(i)
+            && sh.sources.contains_key(&c)
+            && !same_content(noted, sh.cell(c))
+        {
+            rewritten.push((i, c));
+        }
+    }
+    for (i, c) in rewritten {
+        if let Some(sh) = new.sheet_mut(i) {
+            sh.sources_mut().remove(&c);
+        }
+    }
     let touched: Option<HashSet<Key>> = (!structural).then(|| changed.iter().copied().collect());
     for sh in old.sheets.iter().filter(|sh| !sh.sources.is_empty()) {
         let Some(i) = new.sheet_index(&sh.name) else { continue };
@@ -415,7 +442,7 @@ fn drop_overwritten_sources(old: &Workbook, new: &mut Workbook, changed: &[Key],
             continue;
         }
         let overwritten = |c: CellRef| {
-            !placed.contains(&(sh.name.as_str(), c))
+            !placed.contains_key(&(sh.name.as_str(), c))
                 && sh.sources.contains_key(&c)
                 && after.sources.contains_key(&c)
                 && !same_content(sh.cell(c), after.cell(c))
@@ -615,7 +642,8 @@ impl Ctx<'_> {
         if moved.peek().is_none() {
             return;
         }
-        let Some(name) = self.wb.sheet(sheet).map(|sh| sh.name.clone()) else { return };
-        self.sources_moved.extend(moved.map(|c| (name.clone(), c)));
+        let Some(sh) = self.wb.sheet(sheet) else { return };
+        let name = sh.name.clone();
+        self.sources_moved.extend(moved.map(|c| (name.clone(), c, sh.cell(c).cloned())));
     }
 }
