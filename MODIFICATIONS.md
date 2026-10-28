@@ -26,32 +26,44 @@ carries a notice on its first line.
    take the new field from the default). Not proposed upstream yet.
 3. **Cell source links** (2026). A sheet keeps a source link per cell (`Sheet::sources`: the file a
    hard-coded value came from and where in it), set by the host with the new commands `source.set`,
-   `source.get` and `source.clear`, and Clear Sources in the ribbon (`edit.clearSources`). Links move with
-   their cells (inserted and deleted rows, columns and cells, Move Columns, Sort, Remove Duplicates, cut and
-   paste); copy and paste copies them; typing, filling or replacing over a cell, clearing its contents or
-   merging it into a neighbour drops its link. They are saved in the `.xlsx` as a custom XML part (namespace
-   `urn:socratics:sources:2`), grouped by file: per sheet, one `<file path>` per file holding a
-   `<link ref locator>` per cell. Unknown attributes are ignored. A link's `file` read from a workbook is
-   **untrusted**: any workbook can name an absolute path, a UNC share or a `..` escape, and the engine neither
-   validates nor rejects one. A host that opens or fetches what a link names must resolve it against its own
-   root and refuse anything that leaves it. Source links are also part of what sheet protection holds still:
-   `source.set`, `source.clear` and Clear Sources are refused on a locked cell of a protected sheet, as typing
-   in it is, while the row and column edits protection allows still carry links along. A linked hard-coded number carries a small
-   blue marker in its top-left corner, with a tooltip naming its source, and is tinted while it is the active
-   cell; nothing else shows a marker. A plain click on it raises `UiRequest::SourceClick` (sheet, cell and its
-   rectangle on screen), passed to the host's `Services::source_click`. A Sources switch in the sheet-tab bar,
-   at the start of the horizontal scrollbar's share, runs the UI command `view.sourceInspector` (on by
-   default, saved in `UiState`) and turns markers, tint, tooltip and click off. The tab viewport is sized to
-   its tabs so New Sheet follows the last tab — but never below what the active tab needs, so a long sheet
-   name takes those pixels back instead of being clipped (`GridState::tab_strip` reports the three widths, so
-   tests can check that rule instead of measuring a painted name, which depends on the platform's fonts) —
-   and New Sheet is named for assistive tech. The marker, tint
-   and switch colours are theme tokens. Files: `crates/model` (`src/{cellmap,features,sheet}.rs`),
-   `crates/engine` (`src/lib.rs`, the new `src/source_state.rs`, `src/cmd/{data,edit,format,insert,mod,sheet}.rs`,
-   the new `src/cmd/source.rs`, `tests/command_sequence_fuzz.rs`), `crates/xlsx`
-   (`src/{lib,passthrough,read,write}.rs`, the new `src/sources.rs`, `src/tests/passthrough_tests.rs`) and
-   `crates/ui-egui` (`src/{control,grid,lib,ribbon,tabs,theme,widgets}.rs`, `tests/sheet_tabs.rs`, the new
-   `src/source_marks.rs` and `tests/source_links.rs`). Not proposed upstream.
+   `source.get`, `source.clear` and `source.clearAll` (every sheet, one undo step), and Clear Sources in the
+   ribbon (`edit.clearSources`). Only values take links: `source.set` refuses a formula cell, and a `file`
+   that isn't a plain relative path inside the folder (`SourceLink::relative_path`: no absolute path, drive
+   letter, UNC share or backslash, URL scheme, `.`/`..` or empty segment, or control character). Links move
+   with their cells (inserted and deleted rows, columns and cells, Move Columns, Sort, Remove Duplicates, cut
+   and paste); copy and paste within the workbook copies them, a paste into another workbook doesn't; typing,
+   filling or replacing over a cell, clearing its contents or merging it into a neighbour drops its link. The
+   map is shared copy-on-write between a workbook and its undo snapshots (`Arc`), and links to one file share
+   its name, so an edit that leaves links alone costs nothing however many there are. They are saved in the
+   `.xlsx` as a custom XML part (namespace `urn:socratics:sources:2`), grouped by file: per sheet, one
+   `<file path>` per file holding a `<link ref locator>` per cell; unknown attributes are ignored. Reading
+   drops (and counts in a warning) links whose file isn't a relative path, and links past 2,000,000.
+   `gridcraft_xlsx::WriteOptions { omit_sources }` (`io::save_bytes_with`) saves an `.xlsx` or `.json` copy
+   without links, which name internal folders and files and which Excel keeps on its own saves. A host that
+   opens what a link names must still resolve it against its own root and refuse anything that leaves it.
+   Source links are part of what sheet protection holds still: setting or clearing one on a locked cell of a
+   protected sheet is refused, while the row and column edits protection allows still carry links along.
+   On screen, only when the host sets the new `Chrome::sources` (off by default, so the tab bar is then
+   upstream's): a linked hard-coded number carries a small blue marker in its top-left corner, with a
+   tooltip naming its source, and is tinted while it is the active cell; a plain click on it raises
+   `UiRequest::SourceClick` (sheet, cell and its rectangle), passed to the host's `Services::source_click`; a
+   Sources switch in the sheet-tab bar, at the start of the horizontal scrollbar's share, runs the UI command
+   `view.sourceInspector` (on by default, saved in `UiState`) and turns markers, tint, tooltip and click off.
+   With it, the tab viewport is sized to its tabs so New Sheet follows the last tab, but never below what the
+   active tab needs (`GridState::tab_strip` reports the widths for tests), and New Sheet is named for
+   assistive tech. Marker, tint and switch colours are theme tokens; the new strings are translated.
+   **API changes** for a host taking this fork: `Sheet::sources` (`Arc<SourceLinks>`; change it through
+   `Sheet::sources_mut` / `remove_sources_in`), `SourceLink::file` (`Arc<str>`), `Chrome::sources`,
+   `UiRequest::SourceClick` (a new variant: an exhaustive `match` on `UiRequest` needs an arm),
+   `Services::source_click`, `Ctx::sources_moved`, `UiState::source_inspector` and `GridState::{tab_strip,
+   source_tip}` are new public items or fields, so struct literals built outside their constructors need
+   them. Files: `crates/model` (`src/{lib,sheet}.rs`, the new `src/source_link.rs`), `crates/engine`
+   (`src/{io,lib}.rs`, the new `src/source_state.rs`, `src/cmd/{data,edit,format,insert,mod,sheet}.rs`, the new
+   `src/cmd/source.rs`, `tests/command_sequence_fuzz.rs`, which checks every link stays on the value it was
+   set on), `crates/xlsx` (`src/{lib,passthrough,read,write}.rs`, the new `src/sources.rs`,
+   `src/tests/passthrough_tests.rs`) and `crates/ui-egui` (`src/{control,grid,i18n,lib,ribbon,tabs,theme,widgets}.rs`,
+   `src/i18n/*.rs`, `tests/sheet_tabs.rs`, the new `src/source_marks.rs` and `tests/source_links.rs`). Not
+   proposed upstream.
 
 An earlier change, the host chrome switch, was merged upstream as
 [storytold/gridcraft#1877](https://github.com/storytold/gridcraft/pull/1877) and is in GridCraft from v0.10.0.
