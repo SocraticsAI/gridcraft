@@ -27,7 +27,8 @@ carries a notice on its first line.
    Agent Control, Action Journal, About), however they are reached: Alt+F8, the VBA notice's link,
    `ui.ribbonTab`. Files: `crates/ui-egui` (`src/{lib,ribbon,services}.rs`, `src/app/{commands,files}.rs`,
    the new `tests/host_automate.rs`, and `tests/it/host_chrome.rs`, whose `Chrome` literals take the new
-   field from the default). Not proposed upstream yet.
+   field from the default) and `apps/gridcraft-web/src/web.rs` (its `?chrome=none` literal does the same, for
+   this field and `sources`). Not proposed upstream yet.
 3. **Cell source links** (2026). A sheet keeps a source link per cell (`Sheet::sources`: the file a
    hard-coded value came from and where in it), set by the host with the new commands `source.set`,
    `source.get`, `source.clear` and `source.clearAll` (every sheet, one undo step), and Clear Sources in the
