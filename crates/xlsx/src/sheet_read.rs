@@ -286,11 +286,16 @@ pub fn read_sheet(cx: &mut Ctx<'_>, part: &str, name: &str) -> Result<Sheet, IoE
             }
         }
     }
-    // For the source-link reader, which reads after every sheet (see `sources::read`).
+    keep_array_ranges(cx, name, &mut st);
+    Ok(sheet)
+}
+
+/// Keeps the sheet's array-formula ranges for the source-link reader, which reads after every
+/// sheet (see `sources::read`).
+fn keep_array_ranges(cx: &mut Ctx<'_>, name: &str, st: &mut RowState) {
     if !st.dynamic.is_empty() {
         cx.array_ranges.insert(name.to_string(), std::mem::take(&mut st.dynamic));
     }
-    Ok(sheet)
 }
 
 /// A protection password hash: the iterated attributes (`algorithmName`, `hashValue`,

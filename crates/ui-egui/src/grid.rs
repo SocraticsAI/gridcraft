@@ -250,8 +250,11 @@ pub struct GridState {
     /// A one-finger touch drag in progress: it pans the sheet instead of selecting.
     pub touch_pan: bool,
     /// The source marker tooltip: (doc uid, revision, sheet, cell) and its text, worked out once per key.
-    pub source_tip: Option<((u64, u64, usize, CellRef), Option<String>)>,
+    pub source_tip: Option<(SourceTipKey, Option<String>)>,
 }
+
+/// What a source marker tooltip was worked out for: (doc uid, revision, sheet, cell).
+type SourceTipKey = (u64, u64, usize, CellRef);
 
 /// Ctrl+wheel zoom for one (doc uid, sheet). egui eases a notch in over several frames and
 /// fine-grained wheels send parts of one, so the turning is counted in notches, and each whole

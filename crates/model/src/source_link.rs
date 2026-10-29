@@ -100,7 +100,7 @@ pub(crate) fn no_links(links: &Arc<SourceLinks>) -> bool {
 
 /// Serde for [`Sheet::sources`]: a map keyed by `A1` text, as `crate::cellmap` writes one.
 pub(crate) mod links_serde {
-    use super::*;
+    use super::{Arc, Deserializer, Serializer, SourceLink, SourceLinks};
 
     pub fn serialize<S: Serializer>(links: &Arc<SourceLinks>, s: S) -> Result<S::Ok, S::Error> {
         crate::cellmap::serialize(links, s)

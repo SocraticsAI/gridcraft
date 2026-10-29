@@ -73,6 +73,33 @@ fn copy_merges(
     Ok(())
 }
 
+/// The source link a pasted cell brings from `sc`: the one a cut took from the live sheet, else
+/// the clipboard's.
+fn copied_source(
+    cut_move: bool,
+    moved: &gridcraft_model::SourceLinks,
+    src_sheet: &gridcraft_model::Sheet,
+    sc: CellRef,
+) -> Option<gridcraft_model::SourceLink> {
+    if cut_move { moved.get(&sc) } else { src_sheet.sources.get(&sc) }.cloned()
+}
+
+/// Gives the pasted cell `dest` the link it brings, or none, when the paste brings values.
+fn paste_source(cx: &mut crate::cmd::Ctx, dest_sheet: usize, dest: CellRef, values: bool, link: Option<gridcraft_model::SourceLink>) -> Result<()> {
+    if !values {
+        return Ok(());
+    }
+    let sh = cx.sheet_mut(dest_sheet)?;
+    let Some(link) = link else {
+        sh.remove_sources_in(RangeRef::cell(dest), |_| true);
+        return Ok(());
+    };
+    sh.sources_mut().insert(dest, link);
+    // The pasted link is new at this address, whatever it replaced, so the commit mustn't read
+    // the pasted value under it as a cell typed over.
+    cx.note_sources_moved(dest_sheet, [dest]);
+    Ok(())
+}
 pub(super) fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
     let Some(clip) = s.clipboard.clone() else { return Err(EngineError::Other("Nothing to paste.".into())) };
     let what = match str_param(p, "what").unwrap_or("all") {
@@ -118,6 +145,14 @@ pub(super) fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
         // Check the whole footprint before the source is emptied, so a move that overflows the grid loses nothing.
         return Err(EngineError::Other("The cut area doesn't fit at this position; nothing was moved.".into()));
     }
+    // A pasted value brings its source link; a pasted reference (Paste Link), a value combined
+    // with what was there (an operation) or one from another workbook (whose links are relative
+    // to its own folder) has none.
+    let pastes_values = matches!(
+        what,
+        What::All | What::AllExceptBorders | What::Formulas | What::FormulasAndNumberFormats | What::Values | What::ValuesAndNumberFormats
+    );
+    let links_follow = !link && op == "none" && same_doc;
     edit(s, |cx| {
         // Styles from another workbook must be re-interned.
         let mut style_map = std::collections::HashMap::new();
@@ -157,7 +192,7 @@ pub(super) fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
             let src_cell = if cut_move { moved_formulas.iter().find(|(k, _)| *k == sc).map(|(_, v)| v.clone()) } else { src_sheet.cell(sc).cloned() };
             let src_val = src_sheet.value(sc);
             let src_picture = if cut_move { moved_pictures.get(&sc) } else { src_sheet.cell_pictures.get(&sc) }.cloned();
-            let src_source = if cut_move { moved_sources.get(&sc) } else { src_sheet.sources.get(&sc) }.cloned();
+            let src_source = copied_source(cut_move, &moved_sources, src_sheet, sc);
             if skip_blanks && src_picture.is_none() && src_val.is_empty() && src_cell.as_ref().is_none_or(|x| x.formula.is_none()) {
                 continue;
             }
@@ -286,30 +321,7 @@ pub(super) fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
             if let Some(picture) = new_picture {
                 cx.sheet_mut(dest_sheet)?.cell_pictures.insert(dest, picture);
             }
-            // A pasted value brings its source link; a pasted reference (Paste Link), a
-            // value combined with what was there (an operation) or one from another
-            // workbook (whose links are relative to its own folder) has none.
-            if matches!(
-                what,
-                What::All | What::AllExceptBorders | What::Formulas | What::FormulasAndNumberFormats | What::Values | What::ValuesAndNumberFormats
-            ) {
-                let kept = if link || op != "none" || !same_doc { None } else { src_source };
-                let pasted = kept.is_some();
-                let sh = cx.sheet_mut(dest_sheet)?;
-                match kept {
-                    Some(l) => {
-                        sh.sources_mut().insert(dest, l);
-                    }
-                    None => {
-                        sh.remove_sources_in(RangeRef::cell(dest), |_| true);
-                    }
-                }
-                // The pasted link is new at this address, whatever it replaced, so the
-                // commit mustn't read the pasted value under it as a cell typed over.
-                if pasted {
-                    cx.note_sources_moved(dest_sheet, [dest]);
-                }
-            }
+            paste_source(cx, dest_sheet, dest, pastes_values, src_source.filter(|_| links_follow))?;
             cx.touch(dest_sheet, dest);
         }
         // Merged areas inside the copied block travel with it.

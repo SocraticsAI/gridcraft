@@ -45,8 +45,12 @@ pub struct Services {
     /// A linked cell was clicked (sheet name, A1 cell, and where the cell is: left, top, width, height from the
     /// top left of the app's surface, in logical pixels — `UiRequest::SourceClick`'s UI points times the
     /// interface size, so CSS pixels of the canvas on the web); the host shows its source.
-    pub source_click: Option<Box<dyn Fn(&str, &str, Option<[f32; 4]>)>>,
+    pub source_click: Option<SourceClick>,
 }
+
+/// The host's handler for a click on a linked cell: sheet name, A1 cell, and the cell's rectangle
+/// (see [`Services::source_click`]).
+type SourceClick = Box<dyn Fn(&str, &str, Option<[f32; 4]>)>;
 
 /// Shared queue of files read asynchronously (browser file picker, drag and drop).
 pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;

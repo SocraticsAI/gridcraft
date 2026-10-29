@@ -177,9 +177,7 @@ fn do_sort(s: &mut Session, sheet: usize, r: RangeRef, header: bool, keys: Vec<S
                 if let Some(picture) = sh.cell_pictures.get(&src) {
                     pictures.push((dst, picture.clone()));
                 }
-                if let Some(link) = sh.sources.get(&src) {
-                    sources.push((dst, link.clone()));
-                }
+                sources.extend(sh.sources.get(&src).map(|link| (dst, link.clone())));
                 moved.push((dst, cell));
             }
         }
