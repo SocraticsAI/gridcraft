@@ -27,9 +27,11 @@ carries a notice on its first line.
 3. **Cell source links** (2026). A sheet keeps a source link per cell (`Sheet::sources`: the file a
    hard-coded value came from and where in it), set by the host with the new commands `source.set`,
    `source.get`, `source.clear` and `source.clearAll` (every sheet, one undo step), and Clear Sources in the
-   ribbon (`edit.clearSources`). Only values take links: `source.set` refuses a formula cell, and a `file`
-   that isn't a plain relative path inside the folder (`SourceLink::relative_path`: no absolute path, drive
-   letter, UNC share or backslash, URL scheme, `.`/`..` or empty segment, or control character). Links move
+   ribbon (`edit.clearSources`). Only values take links: `source.set` refuses a formula cell, a cell inside
+   a spill range (a dynamic-array or legacy array formula's result, e.g. `A2` under `=SEQUENCE(3)` in
+   `A1`), and a `file` that isn't a plain relative path inside the folder (`SourceLink::relative_path`: no
+   absolute path, drive letter, UNC share or backslash, URL scheme, `.`/`..` or empty segment, or control
+   character). Links move
    with their cells (inserted and deleted rows, columns and cells, Move Columns, Sort, Remove Duplicates, cut
    and paste); copy and paste within the workbook copies them, a paste into another workbook doesn't; typing,
    filling or replacing over a cell, clearing its contents or merging it into a neighbour drops its link. The
@@ -37,7 +39,8 @@ carries a notice on its first line.
    its name, so an edit that leaves links alone costs nothing however many there are. They are saved in the
    `.xlsx` as a custom XML part (namespace `urn:socratics:sources:2`), grouped by file: per sheet, one
    `<file path>` per file holding a `<link ref locator>` per cell; unknown attributes are ignored. Reading
-   drops (and counts in a warning) links whose file isn't a relative path, and links past 2,000,000.
+   drops (and counts in a warning) links whose file isn't a relative path, links on a formula cell or a cell
+   inside an array formula's range in the file (what `source.set` refuses), and links past 2,000,000.
    `gridcraft_xlsx::WriteOptions { omit_sources }` (`io::save_bytes_with`) saves an `.xlsx` or `.json` copy
    without links, which name internal folders and files and which Excel keeps on its own saves. A host that
    opens what a link names must still resolve it against its own root and refuse anything that leaves it.
@@ -60,7 +63,7 @@ carries a notice on its first line.
    them. Files: `crates/model` (`src/{lib,sheet}.rs`, the new `src/source_link.rs`), `crates/engine`
    (`src/{io,lib}.rs`, the new `src/source_state.rs`, `src/cmd/{data,edit,format,insert,mod,sheet}.rs`, the new
    `src/cmd/source.rs`, `tests/command_sequence_fuzz.rs`, which checks every link stays on the value it was
-   set on), `crates/xlsx` (`src/{lib,passthrough,read,write}.rs`, the new `src/sources.rs`,
+   set on), `crates/xlsx` (`src/{lib,passthrough,read,sheet_read,write}.rs`, the new `src/sources.rs`,
    `src/tests/passthrough_tests.rs`) and `crates/ui-egui` (`src/{control,grid,i18n,lib,ribbon,tabs,theme,widgets}.rs`,
    `src/i18n/*.rs`, `tests/sheet_tabs.rs`, the new `src/source_marks.rs` and `tests/source_links.rs`). Not
    proposed upstream.
