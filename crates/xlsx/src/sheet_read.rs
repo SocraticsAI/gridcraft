@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Reading worksheet parts.
 
 use std::collections::HashMap;
@@ -218,6 +219,10 @@ pub fn read_sheet(cx: &mut Ctx<'_>, part: &str, name: &str) -> Result<Sheet, IoE
                 read_note_visibility(&x, &mut sheet, 0);
             }
         }
+    }
+    // For the source-link reader, which reads after every sheet (see `sources::read`).
+    if !st.dynamic.is_empty() {
+        cx.array_ranges.insert(name.to_string(), std::mem::take(&mut st.dynamic));
     }
     Ok(sheet)
 }

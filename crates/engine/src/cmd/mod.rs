@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! The command registry. Ids follow Excel's ribbon (`home.bold`, `insert.chart`,
 //! `data.sortAscending`) plus primitive editing commands (`cell.set`, `selection.set`).
 
@@ -18,9 +19,12 @@ pub mod review;
 pub mod sheet;
 pub mod slicer;
 pub mod solver;
+pub mod source;
 pub mod spelling;
 pub mod view;
 pub mod whatif;
+
+use std::collections::{HashMap, HashSet};
 
 use gridcraft_calc::Key;
 use gridcraft_core::{CellRef, RangeRef};
@@ -144,6 +148,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(forecast::specs());
         v.extend(analysis::specs());
         v.extend(print::specs());
+        v.extend(source::specs());
         v
     })
 }
@@ -314,6 +319,12 @@ pub struct Ctx<'a> {
     /// The command applied sheet protection itself (row/column inserts and deletes the
     /// protection allows), so cells it shifts aren't refused as edits of locked cells.
     pub protection_checked: bool,
+    /// Addresses (sheet name, cell) a source link was moved or written to by this command, with
+    /// the cell's content when it was noted, from [`note_sources_moved`](Ctx::note_sources_moved).
+    /// A link is new at such an address, so [`drop_overwritten_sources`] doesn't read the content
+    /// that moved in with it as the cell having been typed over; it drops the link only when the
+    /// rest of the command rewrote that content (a table's header sync, say).
+    pub sources_moved: Vec<(String, CellRef, Option<gridcraft_model::Cell>)>,
 }
 
 pub(crate) fn edit<R>(s: &mut Session, f: impl FnOnce(&mut Ctx) -> Result<R>) -> Result<R> {
@@ -331,15 +342,24 @@ pub(crate) fn commit<R>(d: &mut DocState, f: impl FnOnce(&mut Ctx) -> Result<R>)
     #[allow(clippy::disallowed_methods)]
     let t0 = if cfg!(target_arch = "wasm32") { None } else { std::env::var_os("GRIDCRAFT_PROFILE").map(|_| std::time::Instant::now()) };
     let mut sel = d.selection.clone();
-    let mut ctx = Ctx { wb: (*d.wb).clone(), changed: Vec::new(), structural: false, sel: &mut sel, fit_rows: Vec::new(), protection_checked: false };
+    let mut ctx = Ctx {
+        wb: (*d.wb).clone(),
+        changed: Vec::new(),
+        structural: false,
+        sel: &mut sel,
+        fit_rows: Vec::new(),
+        protection_checked: false,
+        sources_moved: Vec::new(),
+    };
     let r = f(&mut ctx)?;
-    let Ctx { mut wb, changed, structural, mut fit_rows, protection_checked, .. } = ctx;
+    let Ctx { mut wb, changed, structural, mut fit_rows, protection_checked, sources_moved, .. } = ctx;
     if !protection_checked {
         check_protection(&d.wb, &wb, &d.unlocked_ranges)?;
     }
     if !structural {
         check_arrays(&d.wb, &wb)?;
     }
+    drop_overwritten_sources(&d.wb, &mut wb, &changed, structural, &sources_moved);
     if changed.len() <= 200_000 {
         fit_rows.extend(changed.iter().map(|(s, c)| (*s, c.row)));
     }
@@ -367,6 +387,82 @@ pub(crate) fn commit<R>(d: &mut DocState, f: impl FnOnce(&mut Ctx) -> Result<R>)
     Ok(r)
 }
 
+/// Typing over a linked cell drops its link: the value is no longer the sourced one. Whatever
+/// command made the edit (typing, AutoSum, Text to Columns, Replace, a fill…), a link still at its
+/// address with that cell's value or formula changed under it goes.
+///
+/// What tells a cell typed over apart from a link the command *moved* (paste, cut, sort, inserted
+/// or deleted cells) is what the command did, reported through [`Ctx::note_sources_moved`] — not
+/// how the two links compare. Comparing them would read a link moved onto an address that held an
+/// identical one as a type-over and delete it, and figures sharing a page or document locator (the
+/// normal case for document sources) are exactly that. A link on a cell given the value it already
+/// had stays either way, and undo brings a dropped link back with the rest of the workbook.
+///
+/// Sheets are matched by name, like [`check_protection`]. An ordinary edit reports the cells it
+/// changed, so the scan is over those; only a structural edit, which recalculates everything
+/// instead of listing them, scans the sheet's links. Either way there's no work when no sheet had
+/// any link.
+fn drop_overwritten_sources(
+    old: &Workbook,
+    new: &mut Workbook,
+    changed: &[Key],
+    structural: bool,
+    moved: &[(String, CellRef, Option<gridcraft_model::Cell>)],
+) {
+    if old.sheets.iter().all(|sh| sh.sources.is_empty()) {
+        return;
+    }
+    // Addresses this command put a link at itself, with what the cell held then (the last note
+    // wins): the link there is new, whatever it replaced, but whatever the command wrote over that
+    // content afterwards still drops it.
+    let mut placed: HashMap<(&str, CellRef), Option<&gridcraft_model::Cell>> = HashMap::new();
+    for (n, c, content) in moved {
+        placed.insert((n.as_str(), *c), content.as_ref());
+    }
+    let mut rewritten: Vec<(usize, CellRef)> = Vec::new();
+    for (&(name, c), &noted) in &placed {
+        if let Some(i) = new.sheet_index(name)
+            && let Some(sh) = new.sheets.get(i)
+            && sh.sources.contains_key(&c)
+            && !same_content(noted, sh.cell(c))
+        {
+            rewritten.push((i, c));
+        }
+    }
+    for (i, c) in rewritten {
+        if let Some(sh) = new.sheet_mut(i) {
+            sh.sources_mut().remove(&c);
+        }
+    }
+    let touched: Option<HashSet<Key>> = (!structural).then(|| changed.iter().copied().collect());
+    for sh in old.sheets.iter().filter(|sh| !sh.sources.is_empty()) {
+        let Some(i) = new.sheet_index(&sh.name) else { continue };
+        let Some(after) = new.sheets.get(i) else { continue };
+        if std::sync::Arc::ptr_eq(sh, after) || after.sources.is_empty() {
+            continue;
+        }
+        let overwritten = |c: CellRef| {
+            !placed.contains_key(&(sh.name.as_str(), c))
+                && sh.sources.contains_key(&c)
+                && after.sources.contains_key(&c)
+                && !same_content(sh.cell(c), after.cell(c))
+        };
+        let stale: Vec<CellRef> = match &touched {
+            Some(t) => t.iter().filter(|(si, _)| *si == i).map(|&(_, c)| c).filter(|&c| overwritten(c)).collect(),
+            None => sh.sources.keys().copied().filter(|&c| overwritten(c)).collect(),
+        };
+        if stale.is_empty() {
+            continue;
+        }
+        if let Some(shm) = new.sheet_mut(i) {
+            let links = shm.sources_mut();
+            for c in &stale {
+                links.remove(c);
+            }
+        }
+    }
+}
+
 /// Excel's message for an edit of a locked cell on a protected sheet.
 pub(crate) const PROTECTED: &str = "The cell or chart you're trying to change is on a protected sheet.";
 
@@ -388,6 +484,21 @@ fn check_protection(old: &Workbook, new: &Workbook, unlocked: &[(String, String)
                 && let Some(m) = locked_cell_error(sh, c, unlocked)
             {
                 return Err(EngineError::Other(m));
+            }
+        }
+        // A source link says where a locked cell's value came from, so it's part of what protection
+        // holds still: `source.set`, `source.clear` and Clear Sources are refused on a locked cell,
+        // as typing in it is. They'd otherwise go through, since they leave the content alone.
+        // Edits that only *move* links (row and column inserts and deletes protection allows) set
+        // `protection_checked` and don't reach here.
+        if !std::sync::Arc::ptr_eq(&sh.sources, &after.sources) && sh.sources != after.sources {
+            let changed = sh.sources.iter().filter(|(c, l)| after.sources.get(c) != Some(l)).map(|(c, _)| *c);
+            for c in changed.chain(after.sources.keys().copied().filter(|c| !sh.sources.contains_key(c))) {
+                if old.styles.get(sh.style_id(c)).protection.locked
+                    && let Some(m) = locked_cell_error(sh, c, unlocked)
+                {
+                    return Err(EngineError::Other(m));
+                }
             }
         }
     }
@@ -521,5 +632,18 @@ impl Ctx<'_> {
     }
     pub fn touch(&mut self, sheet: usize, c: CellRef) {
         self.changed.push((sheet, c));
+    }
+    /// Records that this command put a source link at these addresses on `sheet` — moved there by
+    /// a shift, a sort, a move or a paste, or set outright. [`drop_overwritten_sources`] then reads
+    /// the changed content under them as the move it was, not as the cell having been typed over.
+    /// Kept by sheet *name*, like the checks in [`commit`], so reordering sheets can't misdirect it.
+    pub fn note_sources_moved(&mut self, sheet: usize, moved: impl IntoIterator<Item = CellRef>) {
+        let mut moved = moved.into_iter().peekable();
+        if moved.peek().is_none() {
+            return;
+        }
+        let Some(sh) = self.wb.sheet(sheet) else { return };
+        let name = sh.name.clone();
+        self.sources_moved.extend(moved.map(|c| (name.clone(), c, sh.cell(c).cloned())));
     }
 }

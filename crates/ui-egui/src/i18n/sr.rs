@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Serbian (Latin script, ekavian) translations for the interface strings in i18n.rs.
 
 pub(super) fn translate(text: &str) -> Option<&'static str> {
@@ -86,6 +87,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "Obriši sadržaj",
         "Clear Comments and Notes" => "Obriši komentare i beleške",
         "Clear Hyperlinks" => "Obriši hiperveze",
+        "Sources" => "Izvori",
+        "Clear Sources" => "Obriši izvore",
+        "Source Inspector: show cell sources" => "Inspektor izvora: prikaži izvore ćelija",
         "AutoSum" => "Automatski zbir",
         "AutoSum (⌘⇧T)" => "Automatski zbir (⌘⇧T)",
         "Flash\nFill" => "Brzo\npopunjavanje",

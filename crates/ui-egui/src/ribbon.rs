@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, and adds the `Chrome::automate` switch. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch, and Clear Sources (with `Chrome::sources`). See MODIFICATIONS.md.
 //! Title bar (Quick Access Toolbar), ribbon tabs and ribbon groups, and keyboard shortcuts.
 
 use egui::{Align2, Color32, Key, Modifiers, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
@@ -1002,17 +1002,17 @@ fn home(app: &mut SheetApp, ui: &mut Ui) {
             keytip(app, ui, sequence, clear.rect.center_bottom());
         }
         egui::Popup::menu(&clear).show(|ui| {
-            menu_items(
-                app,
-                ui,
-                &[
-                    ("Clear All", "edit.clearAll", json!({})),
-                    ("Clear Formats", "edit.clearFormats", json!({})),
-                    ("Clear Contents", "edit.clearContents", json!({})),
-                    ("Clear Comments and Notes", "edit.clearComments", json!({})),
-                    ("Clear Hyperlinks", "edit.clearHyperlinks", json!({})),
-                ],
-            );
+            let mut items = vec![
+                ("Clear All", "edit.clearAll", json!({})),
+                ("Clear Formats", "edit.clearFormats", json!({})),
+                ("Clear Contents", "edit.clearContents", json!({})),
+                ("Clear Comments and Notes", "edit.clearComments", json!({})),
+                ("Clear Hyperlinks", "edit.clearHyperlinks", json!({})),
+            ];
+            if app.chrome.sources {
+                items.push(("Clear Sources", "edit.clearSources", json!({})));
+            }
+            menu_items(app, ui, &items);
         });
     });
     let sf = big_button(ui, Icon::SortFilter, "Sort &\nFilter", "Sort & Filter", true);

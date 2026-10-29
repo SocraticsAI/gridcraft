@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links (the tab viewport the Sources switch shares). See MODIFICATIONS.md.
 //! Overflowing worksheet tabs, exercised through their actual painted geometry and input.
 use egui::{Event, Modifiers, PointerButton, Rect, Shape, pos2, vec2};
 use gridcraft_engine::Session;
@@ -138,6 +139,31 @@ fn hidden_sheets_long_names_and_window_resize_keep_active_tab_visible() {
     h.run_steps(20);
     assert_visible(&h, name);
     assert_eq!(h.state().session.doc().unwrap().wb.active_sheet, 29);
+}
+
+/// How wide a name paints depends on the platform's fonts, so whether any one name clips in a
+/// given window differs between CI and a developer's machine. This checks the rule instead of a
+/// painted name: the tabs' viewport is never narrower than the active tab, so revealing it can
+/// always show the whole name — unless the strip's own share of the bar is the limit, which no
+/// amount of budgeting can help. Taking the New Sheet button's width out of the strip broke this
+/// for long names on fonts where they need more than the share left over.
+#[test]
+fn the_tab_strip_keeps_room_for_the_whole_active_tab() {
+    for width in [420.0, 560.0, 700.0, 1000.0] {
+        for name in ["Tab29", "Quarterly results and forecasts", "CAPITAL ALLOTMENT LISTING FY24A"] {
+            let mut h = harness(width, 0);
+            // The strip that sizes itself to its tabs is the one drawn with the Sources switch.
+            h.state_mut().chrome.sources = true;
+            h.state_mut().run("sheet.rename", json!({"sheet":29,"name":name})).unwrap();
+            h.state_mut().run("sheet.activate", json!({"sheet":29})).unwrap();
+            h.run_steps(20);
+            let (viewport, active, section) = h.state().grid.tab_strip.expect("the tab strip reports its widths");
+            assert!(
+                viewport + 0.5 >= active.min(section),
+                "{width}px / {name:?}: viewport {viewport} is narrower than the active tab ({active}) and than the strip's share ({section})"
+            );
+        }
+    }
 }
 
 #[test]

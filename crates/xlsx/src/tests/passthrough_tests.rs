@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Pass-through of unmodelled package content (custom XML, external links, connections, query
 //! tables, printer settings, form controls, OLE objects). Packages are built in code.
 
@@ -822,4 +823,30 @@ fn file_version_and_calc_features_survive_a_save() {
     // A workbook that had neither gets neither.
     let plain = Unpacked::new(&write_xlsx(&gridcraft_model::Workbook::new()).unwrap()).text("xl/workbook.xml");
     assert!(!plain.contains("fileVersion") && !plain.contains("extLst"), "{plain}");
+}
+
+#[test]
+fn source_links_are_modelled_while_other_custom_xml_is_still_kept_once() {
+    let (mut wb, _) = read_xlsx(&rich_package()).unwrap();
+    let link = gridcraft_model::SourceLink { file: "Cash/Statement.pdf".into(), locator: "page:3".into() };
+    Arc::make_mut(&mut wb.sheets[0]).sources_mut().insert(gridcraft_core::CellRef::new(2, 2), link);
+    let ours = |u: &Unpacked| -> Vec<String> {
+        u.parts
+            .iter()
+            .filter(|(_, b)| String::from_utf8_lossy(b).contains("<sources xmlns=\"urn:socratics:sources:2\""))
+            .map(|(n, _)| n.clone())
+            .collect()
+    };
+    let saved = write_xlsx(&wb).unwrap();
+    let u = Unpacked::new(&saved);
+    assert_eq!(u.find(CUSTOM_XML.as_bytes()).len(), 1, "the unrelated custom XML item is kept");
+    let mine = ours(&u);
+    assert_eq!(mine.len(), 1);
+    assert_ne!(&mine[0], u.find(CUSTOM_XML.as_bytes())[0], "the two items don't share a name");
+    assert!(u.rels(&mine[0]).iter().any(|r| r.1.ends_with("/customXmlProps")), "our item has its properties part");
+    let (back, _) = read_xlsx(&saved).unwrap();
+    assert_eq!(back.sheets[0].sources, wb.sheets[0].sources);
+    let again = Unpacked::new(&write_xlsx(&back).unwrap());
+    assert_eq!(again.find(CUSTOM_XML.as_bytes()).len(), 1, "theirs survives a second save");
+    assert_eq!(ours(&again).len(), 1, "ours is written once, not kept as well");
 }

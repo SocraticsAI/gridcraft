@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and the Source Inspector (cell source markers, the active linked cell's tint, and a click on a linked cell asking the host to show its source). See MODIFICATIONS.md.
 //! The worksheet grid: virtualised painting of only the visible cells, frozen panes,
 //! headers, selection, fill handle, column/row resizing, text overflow, borders, conditional
 //! formats, tables, comments, filters, sparklines, floating charts/pictures/shapes and the
@@ -148,10 +148,17 @@ pub struct GridState {
     pub geo: Option<Geo>,
     /// The horizontal scrollbar's track in the sheet tab bar (hit-testing for tests).
     pub hscroll: Option<Rect>,
+    /// The sheet-tab strip's widths last frame, for tests: `(tabs viewport, active tab, the
+    /// strip's share of the bar)`. The viewport is never narrower than the active tab unless that
+    /// share is itself the limit, so the active tab can always be revealed whole. Font-independent,
+    /// unlike measuring a painted name.
+    pub tab_strip: Option<(f32, f32, f32)>,
     /// Ctrl+wheel zoom in progress (see [`WheelZoom`]).
     pub wheel_zoom: Option<WheelZoom>,
     /// A one-finger touch drag in progress: it pans the sheet instead of selecting.
     pub touch_pan: bool,
+    /// The source marker tooltip: (doc uid, revision, sheet, cell) and its text, worked out once per key.
+    pub source_tip: Option<((u64, u64, usize, CellRef), Option<String>)>,
 }
 
 /// Ctrl+wheel zoom for one (doc uid, sheet). egui eases a notch in over several frames and
@@ -741,10 +748,12 @@ pub fn show(app: &mut SheetApp, ui: &mut egui::Ui) {
     // Everything up to the headers is painted in logical (left-to-right) coordinates.
     let mirror_from = painter.add(egui::Shape::Noop);
     let mut cf = CfCache::new();
+    // Source Inspector: the active linked cell's tint.
+    let tint = crate::source_marks::linked_at(app, &geo, si, sh, sel.active);
     let quads = if geo.paper.is_some() {
         crate::paper_view::paint_pages(app, &painter, &geo, &wb, si, sh, &sel, outline, &mut cf, &t)
     } else {
-        paint_panes(app, &painter, &geo, &wb, si, sh, &sel, outline, &mut cf, &t)
+        paint_panes(app, &painter, &geo, &wb, si, sh, &sel, outline, &mut cf, &t, tint)
     };
     // Objects above cells.
     let objects = crate::chartview::paint_objects(app, &painter.with_clip_rect(geo.cells), &geo, &wb, si, sh);
@@ -813,6 +822,7 @@ fn paint_panes(
     outline: Rect,
     cf: &mut CfCache,
     t: &Tokens,
+    tint: Option<CellRef>,
 ) -> Vec<((u32, u32), (u32, u32), Rect)> {
     // Quadrants: (rows, cols, clip).
     let (sr0, sr1) = geo.scroll_rows(sh);
@@ -835,7 +845,10 @@ fn paint_panes(
             continue;
         }
         let p = painter.with_clip_rect(*clip);
-        paint_quadrant(&p, geo, wb, si, sh, *rows, *cols, cf, t);
+        paint_quadrant_tinted(&p, geo, wb, si, sh, *rows, *cols, cf, t, tint);
+        if app.sources_shown() {
+            crate::source_marks::paint_quadrant(wb, &p, geo, si, sh, *rows, *cols, t);
+        }
         paint_selection(&p, geo, sh, sel, outline, t, app, *rows, *cols);
     }
     // Freeze lines.
@@ -1062,6 +1075,24 @@ pub(crate) fn paint_quadrant(
     cf: &mut CfCache,
     t: &Tokens,
 ) {
+    paint_quadrant_tinted(p, geo, wb, si, sh, rows, cols, cf, t, None);
+}
+
+/// `paint_quadrant`, with `tint`'s cell (an anchor) filled in `Tokens::source_selected_fill` over
+/// its own fill and under its text.
+#[allow(clippy::too_many_arguments)]
+fn paint_quadrant_tinted(
+    p: &Painter,
+    geo: &Geo,
+    wb: &Workbook,
+    si: usize,
+    sh: &Sheet,
+    rows: (u32, u32),
+    cols: (u32, u32),
+    cf: &mut CfCache,
+    t: &Tokens,
+    tint: Option<CellRef>,
+) {
     let z = geo.z;
     let (r0, r1) = rows;
     let (c0, c1) = cols;
@@ -1117,6 +1148,9 @@ pub(crate) fn paint_quadrant(
             p.rect_filled(rect.expand(0.0), 0.0, f);
         } else if in_merge(c).is_some() {
             p.rect_filled(rect.shrink(0.5), 0.0, Color32::WHITE);
+        }
+        if tint == Some(anchor) {
+            p.rect_filled(rect, 0.0, t.source_selected_fill);
         }
         looks.push((anchor, rect, lk, cfl));
     }
@@ -2161,6 +2195,16 @@ fn interact(app: &mut SheetApp, ui: &mut egui::Ui, resp: &egui::Response, geo: &
                 if p.x < r.left() + r.width() * 0.8 {
                     follow_link(app, &h.target);
                 }
+            } else if primary_clicked
+                && !mods.any()
+                && let Some(linked) = crate::source_marks::linked_at(app, geo, wb.active_sheet, sh, c)
+            {
+                // A plain click on a linked figure selects it and hands it to the host, which shows its source.
+                // A hyperlinked cell follows its link instead.
+                let area = sh.merge_at(linked).map_or_else(|| geo.screen_cell_rect(sh, linked), |m| geo.mirror_rect(geo.range_rect(sh, m)));
+                let rect = Some([area.left(), area.top(), area.width(), area.height()]);
+                app.session.ui_requests.push(gridcraft_engine::UiRequest::SourceClick { sheet: sh.name.clone(), cell: linked.a1(), rect });
+                app.after_engine();
             }
         }
         app.grid.drag = Drag::Select;
@@ -3086,6 +3130,31 @@ pub(crate) fn paint_overlays(
         egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), egui::Id::new("link_tip"), egui::PopupAnchor::Pointer).show(|ui| {
             ui.label(tip);
         });
+    }
+    // Source tooltip of a marker (worked out once per document version and cell, never while
+    // painting cells).
+    let marker = match ui.ctx().pointer_hover_pos() {
+        Some(pos)
+            if app.sources_shown() && app.editor.is_none() && app.grid.drag == Drag::None && ui.ctx().layer_id_at(pos) == Some(ui.layer_id()) =>
+        {
+            let pos = geo.mirror_pos(pos);
+            crate::source_marks::hit(geo, wb, si, sh, pos)
+        }
+        _ => None,
+    };
+    if let (Some(c), Some((uid, revision))) = (marker, app.session.active().map(|d| (d.uid, d.revision))) {
+        let key = (uid, revision, si, c);
+        if app.grid.source_tip.as_ref().is_none_or(|(k, _)| *k != key) {
+            app.grid.source_tip = Some((key, crate::source_marks::tip(wb, si, c)));
+        }
+        if let Some((_, Some(text))) = &app.grid.source_tip {
+            egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), egui::Id::new("source_tip"), egui::PopupAnchor::Pointer).show(|ui| {
+                ui.label(text.as_str());
+            });
+        }
+    } else {
+        // Nothing to name: the last tooltip is gone (and stays gone with the inspector off).
+        app.grid.source_tip = None;
     }
     // Trace precedents / dependents arrows.
     if let Some(trace) = app.grid.trace.clone()

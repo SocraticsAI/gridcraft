@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and cell source links. See MODIFICATIONS.md.
 //! Writing a workbook as an XLSX package.
 
 use std::collections::{BTreeMap, HashMap};
@@ -139,6 +139,10 @@ impl Out {
     pub fn default_type(&mut self, ext: &str, ct: &str) {
         self.defaults.entry(ext.to_string()).or_insert_with(|| ct.to_string());
     }
+    /// Whether a part of this name (any case) has been written.
+    pub fn has_part(&self, name: &str) -> bool {
+        self.parts.iter().any(|(n, _)| n.eq_ignore_ascii_case(name))
+    }
 }
 
 /// Id of the i-th person of `xl/persons/person.xml`: a GUID-shaped, deterministic id (the
@@ -186,7 +190,7 @@ fn check_sheet_names(wb: &Workbook) -> Result<(), IoError> {
     Ok(())
 }
 
-pub fn write_xlsx(wb: &Workbook, kind: XlsxKind) -> Result<Vec<u8>, IoError> {
+pub fn write_xlsx(wb: &Workbook, kind: XlsxKind, options: crate::WriteOptions) -> Result<Vec<u8>, IoError> {
     if wb.sheets.is_empty() {
         return Err(IoError::Format("a workbook needs at least one sheet".into()));
     }
@@ -253,6 +257,9 @@ pub fn write_xlsx(wb: &Workbook, kind: XlsxKind) -> Result<Vec<u8>, IoError> {
         sheet_id += 1;
     }
     sheets_xml.push_str(&kept.sheet_entries(wb.sheets.len(), true, sheet_id).0);
+    if !options.omit_sources {
+        crate::sources::write(wb, &mut out, &mut wb_rels);
+    }
 
     // Defined names, then print areas and titles.
     let mut names = String::new();

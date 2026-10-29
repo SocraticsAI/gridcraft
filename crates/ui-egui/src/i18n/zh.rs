@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Simplified Chinese translations for the interface strings in i18n.rs.
 
 pub(super) fn translate(text: &str) -> Option<&'static str> {
@@ -85,6 +86,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "清除内容",
         "Clear Comments and Notes" => "清除批注和备注",
         "Clear Hyperlinks" => "清除超链接",
+        "Sources" => "来源",
+        "Clear Sources" => "清除来源",
+        "Source Inspector: show cell sources" => "来源检查器：显示单元格来源",
         "AutoSum" => "自动求和",
         "AutoSum (⌘⇧T)" => "自动求和 (⌘⇧T)",
         "Flash\nFill" => "快速\n填充",

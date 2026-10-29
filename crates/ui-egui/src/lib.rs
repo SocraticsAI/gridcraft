@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, and adds the `Chrome::automate` switch. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch, cell source markers and the Source Inspector (shown with `Chrome::sources`). See MODIFICATIONS.md.
 //! GridCraft's egui frontend: an Excel-style window (title bar with Quick Access Toolbar,
 //! ribbon, formula bar, grid, sheet tabs, status bar) over `gridcraft-engine`.
 //!
@@ -30,6 +30,7 @@ pub mod pivot_pane;
 pub mod printing;
 pub mod ribbon;
 pub mod selection_glide;
+pub mod source_marks;
 pub mod tabs;
 pub mod text_box;
 pub mod theme;
@@ -61,6 +62,9 @@ pub struct UiState {
     /// Enable AutoComplete for cell values (File ▸ Options ▸ Editing): typed text is completed
     /// from the one matching entry in the same column.
     pub autocomplete: bool,
+    /// Source Inspector (the Sources switch in the sheet-tab bar): markers on linked numbers, and the
+    /// tint of an active linked number. Off hides them; the links stay in the model.
+    pub source_inspector: bool,
     pub recent: Vec<String>,
     /// One-shot keytip request for a ribbon control: set when a keytip action resolves to
     /// [`keytips::Action::Control`], consumed (and cleared) by the control's render site.
@@ -104,6 +108,7 @@ impl Default for UiState {
             status_bar: true,
             animations: true,
             autocomplete: true,
+            source_inspector: true,
             recent: vec![],
             keytip_invoke: None,
             language: i18n::Language::En,
@@ -197,6 +202,10 @@ pub struct Services {
     /// Web: hand PDF bytes to the browser's print flow directly (no download,
     /// no intermediate file) — opens the system print dialog on that PDF.
     pub print: Option<Box<dyn Fn(&[u8])>>,
+    /// A linked cell was clicked (sheet name, A1 cell, and where the cell is: left, top, width, height from the
+    /// top left of the app's surface, in logical pixels — `UiRequest::SourceClick`'s UI points times the
+    /// interface size, so CSS pixels of the canvas on the web); the host shows its source.
+    pub source_click: Option<Box<dyn Fn(&str, &str, Option<[f32; 4]>)>>,
 }
 
 /// Shared queue of files read asynchronously (browser file picker, drag and drop).
@@ -225,6 +234,11 @@ pub struct Chrome {
     /// The ribbon's Automate tab and its dialogs (Macros, Command Palette, Agent Control, Action
     /// Journal, About), however they are reached: Alt+F8, the VBA notice, `ui.ribbonTab`.
     pub automate: bool,
+    /// Cell source links on screen: the Sources switch in the sheet-tab bar (with New Sheet
+    /// following the last tab), the markers, tint, tooltip and click of the Source Inspector, and
+    /// Clear Sources in the ribbon. Off by default: the tab bar is then as upstream draws it, and
+    /// links stay in the workbook and its file without showing.
+    pub sources: bool,
 }
 
 /// The dialogs the Automate tab opens; [`Chrome::automate`] turns them off with it.
@@ -232,7 +246,7 @@ pub const AUTOMATE_DIALOGS: [&str; 5] = ["macros", "commandSearch", "agents", "j
 
 impl Default for Chrome {
     fn default() -> Self {
-        Chrome { title_bar: true, file_tab: true, automate: true }
+        Chrome { title_bar: true, file_tab: true, automate: true, sources: false }
     }
 }
 
@@ -292,6 +306,14 @@ pub struct SheetApp {
     /// holding other text. Once the cut has been pasted, Paste leaves this text alone.
     cut_text: Option<String>,
     pub started: f64,
+}
+
+impl SheetApp {
+    /// Whether the Source Inspector shows: the host shows sources ([`Chrome::sources`]) and the
+    /// Sources switch is on ([`UiState::source_inspector`]).
+    pub fn sources_shown(&self) -> bool {
+        self.chrome.sources && self.ui.source_inspector
+    }
 }
 
 impl SheetApp {
@@ -636,6 +658,10 @@ impl SheetApp {
                 self.ui.animations = p.get("on").and_then(Json::as_bool).unwrap_or(!self.ui.animations);
                 Ok(json!({"on": self.ui.animations}))
             }
+            "view.sourceInspector" => {
+                self.ui.source_inspector = p.get("on").and_then(Json::as_bool).unwrap_or(!self.ui.source_inspector);
+                Ok(json!({"on": self.ui.source_inspector}))
+            }
             "options.autoComplete" => {
                 self.ui.autocomplete = p.get("on").and_then(Json::as_bool).unwrap_or(!self.ui.autocomplete);
                 Ok(json!({"on": self.ui.autocomplete}))
@@ -734,6 +760,13 @@ impl SheetApp {
                 UiRequest::OpenUrl(u) => {
                     if let Some(f) = &self.services.open_url {
                         f(&u);
+                    }
+                }
+                UiRequest::SourceClick { sheet, cell, rect } => {
+                    if let Some(f) = &self.services.source_click {
+                        // UI points to the canvas's CSS pixels: the UI zoom scales points on the page.
+                        let zoom = self.ui.zoom_factor();
+                        f(&sheet, &cell, rect.map(|r| r.map(|v| v * zoom)));
                     }
                 }
             }

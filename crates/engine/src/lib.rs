@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and cell source links. See MODIFICATIONS.md.
 //! The GridCraft engine façade.
 //!
 //! Every user-visible action is a command with a stable id (`cell.set`, `home.bold`,
@@ -21,6 +21,7 @@ pub mod pivot;
 pub mod pivot_calc;
 pub mod sample;
 pub mod selection;
+pub mod source_state;
 pub mod tables;
 
 use std::sync::Arc;
@@ -226,6 +227,15 @@ pub enum UiRequest {
     /// Start editing the active cell (F2) with optional initial text.
     EditCell(Option<String>),
     OpenUrl(String),
+    /// The user clicked a linked cell: the host shows its source (sheet name, A1 cell). `rect` is where the
+    /// cell is on screen when the UI knows it: left, top, width and height in UI points (egui's units, before
+    /// the interface size scales them) from the top left of the UI, so the host can put what it shows beside
+    /// the cell. The egui frontend hands it to `Services::source_click` in logical pixels instead.
+    SourceClick {
+        sheet: String,
+        cell: String,
+        rect: Option<[f32; 4]>,
+    },
 }
 
 #[derive(Default)]

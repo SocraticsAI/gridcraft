@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! Brazilian Portuguese translations for the interface strings in i18n.rs. Labels follow Excel's
 //! pt-BR wording; anything absent falls back to English.
 
@@ -86,6 +87,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "Limpar Conteúdo",
         "Clear Comments and Notes" => "Limpar Comentários e Notas",
         "Clear Hyperlinks" => "Limpar Hiperlinks",
+        "Sources" => "Fontes",
+        "Clear Sources" => "Limpar Fontes",
+        "Source Inspector: show cell sources" => "Inspetor de Fontes: mostrar as fontes das células",
         "AutoSum" => "Soma Automática",
         "AutoSum (⌘⇧T)" => "Soma Automática (⌘⇧T)",
         "Flash\nFill" => "Preenchimento\nRelâmpago",

@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: translations for cell source links. See MODIFICATIONS.md.
 //! German translations for the interface strings in i18n.rs. Labels follow the wording German
 //! spreadsheet users know; anything absent falls back to English.
 
@@ -82,6 +83,9 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Clear Contents" => "Inhalte löschen",
         "Clear Comments and Notes" => "Kommentare und Notizen löschen",
         "Clear Hyperlinks" => "Hyperlinks löschen",
+        "Sources" => "Quellen",
+        "Clear Sources" => "Quellen löschen",
+        "Source Inspector: show cell sources" => "Quelleninspektor: Zellquellen anzeigen",
         "AutoSum" => "AutoSumme",
         "AutoSum (⌘⇧T)" => "AutoSumme (⌘⇧T)",
         "Flash\nFill" => "Blitz-\nvorschau",
