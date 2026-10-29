@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 use super::clipboard::What;
 use super::{
     Cell, CellRef, EngineError, Formula, Json, RangeRef, Result, Session, StyleId, Value, bad, bool_param, cell_param_on, edit, json, str_param,
@@ -290,12 +291,7 @@ pub(super) fn paste_special(s: &mut Session, p: &Json) -> Result<Json> {
             // workbook (whose links are relative to its own folder) has none.
             if matches!(
                 what,
-                What::All
-                    | What::AllExceptBorders
-                    | What::Formulas
-                    | What::FormulasAndNumberFormats
-                    | What::Values
-                    | What::ValuesAndNumberFormats
+                What::All | What::AllExceptBorders | What::Formulas | What::FormulasAndNumberFormats | What::Values | What::ValuesAndNumberFormats
             ) {
                 let kept = if link || op != "none" || !same_doc { None } else { src_source };
                 let pasted = kept.is_some();

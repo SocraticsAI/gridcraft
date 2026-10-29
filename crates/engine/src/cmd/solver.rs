@@ -1,4 +1,3 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! Solver (Data › Analysis › Solver): finds values for variable cells that maximise, minimise
 //! or hit a value in an objective cell, subject to constraints.
 //!

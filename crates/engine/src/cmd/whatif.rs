@@ -1,4 +1,3 @@
-// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! What-If Analysis (Data › Forecast): Goal Seek, Scenario Manager, Data Tables; and the Data
 //! Tools that work on whole lists: Advanced Filter and Consolidate.
 //!

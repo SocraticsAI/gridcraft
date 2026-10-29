@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 use super::{Dialog, Json, SheetApp, json};
 
 /// The Macros dialog: lists GridCraft's own recorded scripts and (if the file carries one) the

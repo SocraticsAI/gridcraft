@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 use super::lp::Outcome;
 use super::model::{Constraint, Goal, Method, Model, Rel, Rhs, parse_model, saved_model};
 use super::problem::{Evaluator, Problem, as_num, build_problem};

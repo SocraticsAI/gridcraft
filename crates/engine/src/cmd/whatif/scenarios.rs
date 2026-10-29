@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 use super::{
     Cell, CellRef, DefinedName, Deserialize, EngineError, HashMap, Json, Result, Serialize, Session, Sheet, StyleId, Trial, Value, Workbook, bad,
     bool_param, cell_list, edit, json, json_value, str_param, value_json,

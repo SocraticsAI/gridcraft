@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: the Source Inspector (cell source markers, the active linked cell's tint, the source tooltip). See MODIFICATIONS.md.
 #[cfg(test)]
 use super::Trace;
 use super::cursor::update_cursor;

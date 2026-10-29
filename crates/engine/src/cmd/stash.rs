@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 //! GridCraft data kept in hidden workbook-scope defined names, so that it travels inside the xlsx
 //! file.
 //!
@@ -190,7 +191,13 @@ pub fn set(wb: &mut Workbook, key: &str, text: &str) -> Result<()> {
     }
     remove(wb, key);
     for (i, formula) in formulas.into_iter().enumerate() {
-        wb.names.push(DefinedName { name: format!("{PREFIX}{key}_{i}"), scope: None, formula, comment: format!("{} data", gridcraft_core::brand::name()), hidden: true });
+        wb.names.push(DefinedName {
+            name: format!("{PREFIX}{key}_{i}"),
+            scope: None,
+            formula,
+            comment: format!("{} data", gridcraft_core::brand::name()),
+            hidden: true,
+        });
     }
     Ok(())
 }

@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 use super::controls::control_keytip;
 use super::{Icon, SheetApp, Ui, big_button, json};
 

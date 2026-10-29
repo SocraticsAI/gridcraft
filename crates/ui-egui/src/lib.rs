@@ -1,4 +1,4 @@
-// Modified by Socratics, 2026: takes product-name text from `gridcraft_core::brand`, adds the `Chrome::automate` switch, cell source markers and the Source Inspector (shown with `Chrome::sources`). See MODIFICATIONS.md.
+// Modified by Socratics, 2026: re-exports `AUTOMATE_DIALOGS` (the `Chrome::automate` switch), and adds the cell source markers and the Source Inspector's switch state. See MODIFICATIONS.md.
 //! GridCraft's egui frontend: an Excel-style window (title bar with Quick Access Toolbar,
 //! ribbon, formula bar, grid, sheet tabs, status bar) over `gridcraft-engine`.
 //!

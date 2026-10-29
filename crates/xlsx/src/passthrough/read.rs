@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 use super::*;
 
 /// A part's relationships with full type URIs. `Ok(vec![])` when it has none; an error when the

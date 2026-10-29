@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 #[cfg(not(target_arch = "wasm32"))]
 use super::updates_ui;
 use super::{SheetApp, desktop_theme};

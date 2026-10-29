@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: Clear Sources (with `Chrome::sources`). See MODIFICATIONS.md.
 use super::controls::{
     ComboResult, act, active_style, anchor_keytip, control_keytip, editable_combo, invoke, keytip, list_combo, menu_items, popup_command, sep,
     theme_colors,

@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 use super::cell::input_to_cell;
 use super::paste_special::paste_special;
 use super::{

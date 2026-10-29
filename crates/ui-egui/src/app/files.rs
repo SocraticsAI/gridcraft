@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and the `Chrome::automate` switch. See MODIFICATIONS.md.
 use super::{Json, Notice, NoticeKind, OpenWindow, SheetApp, clean_error, json};
 
 impl SheetApp {
@@ -46,11 +47,16 @@ impl SheetApp {
             // The reader says "dropped" when the VBA project was missing or unreadable; never promise to keep it then.
             let dropped = vba.iter().any(|m| m.contains("dropped"));
             let text = if dropped {
-                "This workbook's VBA macros could not be loaded and were dropped, so they will not be in the saved file. Keep the original file.".to_string()
+                "This workbook's VBA macros could not be loaded and were dropped, so they will not be in the saved file. Keep the original file."
+                    .to_string()
             } else {
-                format!("This workbook contains VBA macros. {} keeps them when you save as .xlsm, but does not run them.", gridcraft_engine::core::brand::name())
+                format!(
+                    "This workbook contains VBA macros. {} keeps them when you save as .xlsm, but does not run them.",
+                    gridcraft_engine::core::brand::name()
+                )
             };
-            self.notice = Some(Notice { text, kind: NoticeKind::Warning, action: self.chrome.automate.then(|| ("What this means".into(), "macros".into())) });
+            self.notice =
+                Some(Notice { text, kind: NoticeKind::Warning, action: self.chrome.automate.then(|| ("What this means".into(), "macros".into())) });
         } else {
             let text = if msgs.len() == 1 {
                 msgs[0].to_string()

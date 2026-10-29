@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, the `Chrome::automate` switch, and the Source Inspector (`view.sourceInspector`, source clicks to the host). See MODIFICATIONS.md.
 use super::{
     INTERFACE_SCALE_MAX, INTERFACE_SCALE_MIN, Json, NoticeKind, SheetApp, UiRequest, backstage, clamp_interface_scale, clean_error, dialogs,
     formula_locale, i18n, json, now_ms, printing,

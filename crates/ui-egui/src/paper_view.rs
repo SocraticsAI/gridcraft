@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: the Source Inspector's tint (none in Page Layout view). See MODIFICATIONS.md.
 //! Page Layout view (View › Workbook Views › Page Layout): the sheet drawn as printed pages on a
 //! desk, with rulers, margins, headers and footers.
 //!
@@ -162,7 +163,18 @@ pub(crate) fn paint_pages(input: PagePaintInput<'_>, cf: &mut CfCache) -> Vec<gr
         }
         painted += 1;
         let pc = p.with_clip_rect(clip);
-        grid::paint_quadrant(grid::QuadrantPaint { painter: &pc, geo, workbook: wb, sheet_index: si, sheet: sh, rows, cols, cf, tokens: t, tint: None });
+        grid::paint_quadrant(grid::QuadrantPaint {
+            painter: &pc,
+            geo,
+            workbook: wb,
+            sheet_index: si,
+            sheet: sh,
+            rows,
+            cols,
+            cf,
+            tokens: t,
+            tint: None,
+        });
         if !pg.is_data_page(i, j) {
             // "Click to add data" pages: faded until something is typed there.
             pc.rect_filled(clip, 0.0, t.grid_bg.gamma_multiply(0.75));

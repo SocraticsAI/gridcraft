@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 use super::{
     Axis, Cell, CellRef, Edit, EngineError, Formula, Json, MAX_ROWS, RangeRef, Result, Session, Sheet, Style, Table, TableColumn, TotalsFn, bad,
     block, bool_param, edit, json, rewrite, shift_cell_features, str_param, target_range, target_sheet, with,

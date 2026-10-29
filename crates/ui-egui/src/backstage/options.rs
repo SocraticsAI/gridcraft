@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 use super::{Key, Language, Modifiers, SheetApp, Ui, dim, i18n, json, section, vec2};
 
 /// Excel's File › Options page: General (display theme, interface language and Show formula bar),

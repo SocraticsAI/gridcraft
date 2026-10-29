@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 use super::{SheetApp, clean_error, editor, formula_bar, formula_locale, json, now_ms};
 
 impl SheetApp {

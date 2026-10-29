@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`, and a click on a linked cell asking the host to show its source. See MODIFICATIONS.md.
 use super::editor::validation_arrow;
 use super::geo::Geo;
 use super::keyboard::keyboard;

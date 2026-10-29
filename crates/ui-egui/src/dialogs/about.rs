@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 use super::Dialog;
 
 /// Help ▸ About GridCraft: the app, its contributors and the AI models that helped. The credits

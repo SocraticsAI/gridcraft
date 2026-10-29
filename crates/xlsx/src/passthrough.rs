@@ -1,4 +1,3 @@
-// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 //! Pass-through of package content GridCraft does not model, so that open → edit → save keeps it.
 //!
 //! On read, the raw bytes of unmodelled parts are kept with their content type and their

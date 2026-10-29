@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 use super::editor::popup_dismissed;
 use super::geo::Geo;
 use super::tables::filter_table_range;

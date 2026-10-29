@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: cell source links. See MODIFICATIONS.md.
 use super::read::{map_rel_ids, vml_block_max};
 use super::*;
 

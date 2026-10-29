@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: the Source Inspector's tint of the active linked cell. See MODIFICATIONS.md.
 use super::cell_paint::{
     Look, MergedArea, cell_text_y, center_across_end, col32, display_text, look, merged_edges, paint_border, paint_cf_icon, painted_halign,
     rotated_text_pos, shrink_font, wrapped_cell_text_y,

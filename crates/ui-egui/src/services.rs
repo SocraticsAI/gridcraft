@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: the `Chrome::automate` and `Chrome::sources` switches, and `Services::source_click`. See MODIFICATIONS.md.
 use super::printing;
 
 type PickSave = Box<dyn Fn(&str) -> Option<String>>;

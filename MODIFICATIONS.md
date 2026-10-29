@@ -1,8 +1,8 @@
 # Modifications by Socratics
 
-This branch (`socratics`) of the [SocraticsAI/gridcraft](https://github.com/SocraticsAI/gridcraft) fork is
-GridCraft as released upstream ([storytold/gridcraft](https://github.com/storytold/gridcraft), Apache-2.0 OR
-MIT), plus the changes below. Socratics builds its spreadsheet from this branch. Every file the changes touch
+Each `socratics-vX.Y.Z` tag of the [SocraticsAI/gridcraft](https://github.com/SocraticsAI/gridcraft) fork is
+GridCraft vX.Y.Z as released upstream ([storytold/gridcraft](https://github.com/storytold/gridcraft), Apache-2.0
+OR MIT), plus the changes below. Socratics builds its spreadsheet from these tags. Every file the changes touch
 carries a notice on its first line.
 
 ## Changes
@@ -10,20 +10,24 @@ carries a notice on its first line.
 1. **Product name set by the host** (2026). A new `gridcraft_core::brand` module holds the product name shown
    and saved, "GridCraft" by default. An embedding host can set it once at startup. Window and dialog titles,
    the default note author, `docProps/app.xml`'s `<Application>`, pivot `refreshedBy`, the PDF creator and
-   producer, and several messages read it instead of a fixed "GridCraft". Files: `crates/core` (the new
-   `src/brand.rs`, `src/lib.rs`, `tests/brand.rs`), `crates/engine` (`src/cmd/{extra,file,solver,spelling,whatif}.rs`,
-   `src/io.rs`, `src/lib.rs`, `src/tests.rs`, the new `tests/host_brand.rs`), `crates/pdf` (`Cargo.toml`,
-   `src/lib.rs`), `crates/ui-egui` (`src/{backstage,dialogs,formula_bar,grid,lib,ribbon}.rs`) and `crates/xlsx`
-   (`src/pivot.rs`, `src/write.rs`, `src/xls/formula.rs`, `src/xls/mod.rs`). The new `gridcraft-pdf` →
+   producer, the File › Account product name, the comment on the hidden names GridCraft keeps its data in,
+   and several messages read it instead of a fixed "GridCraft". Files: `crates/core` (the new
+   `src/brand.rs`, `src/lib.rs`, `tests/brand.rs`), `crates/engine` (`src/cmd/{extra,file,formulas,spelling,stash}.rs`,
+   `src/cmd/solver/reports.rs`, `src/cmd/whatif/scenarios.rs`, `src/io.rs`, `src/lib.rs`, `src/tests.rs`, the
+   new `tests/host_brand.rs`), `crates/pdf` (`Cargo.toml`, `src/lib.rs`), `crates/ui-egui`
+   (`src/{backstage,dialogs,formula_bar}.rs`, `src/app/{commands,editing,files,prefs}.rs`,
+   `src/backstage/options.rs`, `src/dialogs/{about,macros,show}.rs`, `src/grid/{interact,menus}.rs`,
+   `src/ribbon/automate.rs`) and `crates/xlsx` (`src/pivot/write.rs`, `src/write.rs`, `src/xls.rs`,
+   `src/xls/formula.rs`). The new `gridcraft-pdf` →
    `gridcraft-core` dependency is two crates inside layer L0, so `xtask/src/layers.rs` lists it in
    `INTRA_LAYER_ORDER` the way `core` → `numfmt` already was; without that entry `cargo xtask layers`
    (and so `cargo xtask ci`) fails. Not proposed upstream.
 2. **Automate switch for the host** (2026). `Chrome` gains an `automate` field, on by default. An embedding
    host can turn it off to hide the ribbon's Automate tab and refuse its dialogs (Macros, Command Palette,
    Agent Control, Action Journal, About), however they are reached: Alt+F8, the VBA notice's link,
-   `ui.ribbonTab`. Files: `crates/ui-egui/src/lib.rs`, `crates/ui-egui/src/ribbon.rs`, the new
-   `crates/ui-egui/tests/host_automate.rs`, and `crates/ui-egui/tests/host_chrome.rs` (its `Chrome` literals
-   take the new field from the default). Not proposed upstream yet.
+   `ui.ribbonTab`. Files: `crates/ui-egui` (`src/{lib,ribbon,services}.rs`, `src/app/{commands,files}.rs`,
+   the new `tests/host_automate.rs`, and `tests/it/host_chrome.rs`, whose `Chrome` literals take the new
+   field from the default). Not proposed upstream yet.
 3. **Cell source links** (2026). A sheet keeps a source link per cell (`Sheet::sources`: the file a
    hard-coded value came from and where in it), set by the host with the new commands `source.set`,
    `source.get`, `source.clear` and `source.clearAll` (every sheet, one undo step), and Clear Sources in the
@@ -52,20 +56,20 @@ carries a notice on its first line.
    `UiRequest::SourceClick` (sheet, cell and its rectangle), passed to the host's `Services::source_click`; a
    Sources switch in the sheet-tab bar, at the start of the horizontal scrollbar's share, runs the UI command
    `view.sourceInspector` (on by default, saved in `UiState`) and turns markers, tint, tooltip and click off.
-   With it, the tab viewport is sized to its tabs so New Sheet follows the last tab, but never below what the
-   active tab needs (`GridState::tab_strip` reports the widths for tests), and New Sheet is named for
-   assistive tech. Marker, tint and switch colours are theme tokens; the new strings are translated.
+   The switch sits just before the handle that resizes the tabs' share, so it never takes room from the tabs,
+   and New Sheet is named for assistive tech. Marker, tint and switch colours are theme tokens; the new strings are translated.
    **API changes** for a host taking this fork: `Sheet::sources` (`Arc<SourceLinks>`; change it through
    `Sheet::sources_mut` / `remove_sources_in`), `SourceLink::file` (`Arc<str>`), `Chrome::sources`,
    `UiRequest::SourceClick` (a new variant: an exhaustive `match` on `UiRequest` needs an arm),
-   `Services::source_click`, `Ctx::sources_moved`, `UiState::source_inspector` and `GridState::{tab_strip,
-   source_tip}` are new public items or fields, so struct literals built outside their constructors need
+   `Services::source_click`, `Ctx::sources_moved`, `UiState::source_inspector` and `GridState::source_tip` are new public items or fields, so struct literals built outside their constructors need
    them. Files: `crates/model` (`src/{lib,sheet}.rs`, the new `src/source_link.rs`), `crates/engine`
-   (`src/{io,lib}.rs`, the new `src/source_state.rs`, `src/cmd/{data,edit,format,insert,mod,sheet}.rs`, the new
-   `src/cmd/source.rs`, `tests/command_sequence_fuzz.rs`, which checks every link stays on the value it was
-   set on), `crates/xlsx` (`src/{lib,passthrough,read,sheet_read,write}.rs`, the new `src/sources.rs`,
-   `src/tests/passthrough_tests.rs`) and `crates/ui-egui` (`src/{control,grid,i18n,lib,ribbon,tabs,theme,widgets}.rs`,
-   `src/i18n/*.rs`, `tests/sheet_tabs.rs`, the new `src/source_marks.rs` and `tests/source_links.rs`). Not
+   (`src/{cmd,io,lib}.rs`, the new `src/source_state.rs`, `src/cmd/{edit,format,sheet}.rs`,
+   `src/cmd/data/{sort,tools}.rs`, `src/cmd/edit/{clipboard,paste_special}.rs`, `src/cmd/insert/table.rs`, the
+   new `src/cmd/source.rs`, `tests/it/command_sequence_fuzz.rs`, which checks every link stays on the value it
+   was set on), `crates/xlsx` (`src/{lib,read,sheet_read,write}.rs`, `src/passthrough/{read,write}.rs`, the new
+   `src/sources.rs`, `src/tests/passthrough_tests.rs`) and `crates/ui-egui` (`src/{app,control,grid,lib,paper_view,services,tabs,theme,widgets}.rs`,
+   `src/app/commands.rs`, `src/grid/{interact,quadrant,show}.rs`, `src/ribbon/home.rs`, `src/i18n/*.rs`
+   (`ja.rs` is the master list), the new `src/source_marks.rs` and `tests/source_links.rs`). Not
    proposed upstream.
 
 An earlier change, the host chrome switch, was merged upstream as

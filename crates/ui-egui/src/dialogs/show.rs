@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: product-name text comes from `gridcraft_core::brand`. See MODIFICATIONS.md.
 use super::about::about;
 use super::analysis::{analysis_toolpak, goal_seek, solver, solver_results};
 use super::charts::{recommended_charts, select_data};
