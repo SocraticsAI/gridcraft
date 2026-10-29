@@ -1,7 +1,8 @@
 // Added by Socratics, 2026. See MODIFICATIONS.md.
 //! Cell source links: which document each hard-coded value came from (see
 //! `gridcraft_model::SourceLink`). A host that fills cells from its documents writes the values,
-//! then their links (`source.set`); typing over a cell drops its link. A formula cell takes none.
+//! then their links (`source.set`); typing over a cell drops its link. A formula cell, or one a formula spills
+//! into, takes none.
 
 use gridcraft_core::{CellRef, RangeRef};
 use gridcraft_model::SourceLink;
@@ -20,7 +21,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Set Cell Sources",
             [],
             None,
-            "{sheet?, range: \"A1:C3\", links: [[{file, locator} | null]] (one row per range row; null removes a link; file is a relative path; a formula cell takes none)} → {linked}",
+            "{sheet?, range: \"A1:C3\", links: [[{file, locator} | null]] (one row per range row; null removes a link; file is a relative path; a formula cell, or one a formula spills into, takes none)} → {linked}",
             has_doc,
             set_links
         ),
@@ -84,11 +85,23 @@ fn set_links(s: &mut Session, p: &Json) -> Result<Json> {
         }
     }
     // A formula has no source of its own (its inputs do), and a link on one would be read as typed
-    // over by any edit that rewrites its references, so only values take links.
-    if let Some(sh) = s.doc()?.wb.sheet(sheet)
-        && let Some((at, _)) = parsed.iter().find(|(at, l)| l.is_some() && sh.cell(*at).is_some_and(|c| c.formula.is_some()))
-    {
-        return Err(bad("source.set", format!("{}: a formula has no source of its own; link the values it uses", at.a1())));
+    // over by any edit that rewrites its references, so only values take links. A cell a
+    // dynamic-array or array formula spills into holds that formula's result, not a value of its
+    // own, so it takes none either.
+    if let Some(sh) = s.doc()?.wb.sheet(sheet) {
+        if let Some((at, _)) = parsed.iter().find(|(at, l)| l.is_some() && sh.cell(*at).is_some_and(|c| c.formula.is_some())) {
+            return Err(bad("source.set", format!("{}: a formula has no source of its own; link the values it uses", at.a1())));
+        }
+        let spills: Vec<(CellRef, RangeRef)> = sh.spill_ranges.iter().filter(|(_, r)| r.intersects(&range)).map(|(a, r)| (*a, *r)).collect();
+        if !spills.is_empty()
+            && let Some((at, anchor)) =
+                parsed.iter().filter(|(_, l)| l.is_some()).find_map(|(at, _)| spills.iter().find(|(_, r)| r.contains(*at)).map(|(a, _)| (*at, *a)))
+        {
+            return Err(bad(
+                "source.set",
+                format!("{}: the formula in {} spills into it, so it has no source of its own; link the values it uses", at.a1(), anchor.a1()),
+            ));
+        }
     }
     SourceLink::share_files(parsed.iter_mut().filter_map(|(_, l)| l.as_mut()));
     let linked = parsed.iter().filter(|(_, l)| l.is_some()).count();
@@ -255,6 +268,39 @@ mod tests {
         s.execute("cell.set", json!({"cell": "B1", "input": "=C1"})).unwrap();
         assert_eq!(locator(&s, "B1"), None);
         assert_eq!(locator(&s, "C1").as_deref(), Some("c"));
+    }
+
+    #[test]
+    fn a_cell_a_formula_spills_into_cannot_be_linked() {
+        let mut s = s();
+        s.execute("cell.set", json!({"cell": "A1", "input": "=SEQUENCE(3)"})).unwrap();
+        // Steve's case: A2 shows 2 from A1's spill; it is no hard-coded value.
+        let err = s.execute("source.set", json!({"range": "A2", "links": [[link_json("a2")]]})).unwrap_err().to_string();
+        assert!(err.contains("A2") && err.contains("A1") && err.contains("spills"), "{err}");
+        assert!(s.execute("source.set", json!({"range": "A3", "links": [[link_json("a3")]]})).is_err());
+        // The anchor is refused as a formula.
+        let err = s.execute("source.set", json!({"range": "A1", "links": [[link_json("a1")]]})).unwrap_err().to_string();
+        assert!(err.contains("formula"), "{err}");
+        // A batch reaching into the spill is refused whole and changes nothing.
+        s.execute("range.setValues", json!({"range": "B1:B3", "values": [[1], [2], [3]]})).unwrap();
+        let mixed = json!({"range": "A2:B3", "links": [[null, link_json("b2")], [link_json("a3"), link_json("b3")]]});
+        let err = s.execute("source.set", mixed).unwrap_err().to_string();
+        assert!(err.contains("A3"), "{err}");
+        assert_eq!(link_count(&s, "Sheet1"), 0);
+        // Removing a link (null) inside the spill is still allowed, and the values beside it link.
+        s.execute("source.set", json!({"range": "A2:B3", "links": [[null, link_json("b2")], [null, link_json("b3")]]})).unwrap();
+        assert_eq!(locators(&s, &["A2", "A3", "B2", "B3"]), [None, None, Some("b2".into()), Some("b3".into())]);
+        // A legacy array formula's range as well.
+        s.execute("range.setValues", json!({"range": "D1:D2", "values": [[4], [5]]})).unwrap();
+        s.execute("selection.set", json!({"range": "E1:E2"})).unwrap();
+        s.execute("cell.set", json!({"cell": "E1", "input": "=D1:D2*2", "array": true})).unwrap();
+        let err = s.execute("source.set", json!({"range": "E2", "links": [[link_json("e2")]]})).unwrap_err().to_string();
+        assert!(err.contains("E2") && err.contains("E1"), "{err}");
+        // Once the spill shrinks away from a cell, that cell can take a link again.
+        s.execute("cell.set", json!({"cell": "A1", "input": "=SEQUENCE(1)"})).unwrap();
+        s.execute("range.setValues", json!({"range": "A3", "values": [[7]]})).unwrap();
+        s.execute("source.set", json!({"range": "A3", "links": [[link_json("a3")]]})).unwrap();
+        assert_eq!(locator(&s, "A3").as_deref(), Some("a3"));
     }
 
     #[test]
