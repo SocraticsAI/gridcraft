@@ -1,3 +1,4 @@
+// Modified by Socratics, 2026: streamed rows no longer count against the element limit. See MODIFICATIONS.md.
 //! A small XML tree built on `quick-xml`, with streaming of repeated elements (worksheet rows,
 //! shared strings) so large parts never need a full tree, plus escaping helpers for writing.
 
@@ -208,6 +209,11 @@ fn named_entity(name: &str) -> Option<char> {
     })
 }
 
+/// Elements below `el`.
+fn descendants(el: &El) -> usize {
+    el.children.iter().map(|c| 1 + descendants(c)).sum()
+}
+
 /// Parses a whole part into a tree.
 pub fn parse(xml: &[u8]) -> Result<El, IoError> {
     parse_streaming(xml, &[], &mut |_| Ok(()))
@@ -244,6 +250,9 @@ pub fn parse_streaming(xml: &[u8], split: &[&str], cb: &mut dyn FnMut(El) -> Res
         match stack.last_mut() {
             Some(parent) => {
                 if split.contains(&el.name.as_str()) {
+                    // The streamed element leaves the tree with what it held, so the count stays
+                    // what the tree keeps: a large sheet is refused only when one row is.
+                    *kept = kept.saturating_sub(descendants(&el));
                     cb(el)?;
                 } else {
                     *kept = kept.saturating_add(1);
@@ -565,6 +574,24 @@ mod tests {
         let xml = format!("<r>{}<y/></r>", "<x/>".repeat(MAX_XML_NODES + 1));
         let err = parse(xml.as_bytes()).unwrap_err();
         assert!(err.to_string().contains("elements"), "{err}");
+    }
+
+    #[test]
+    fn streamed_rows_do_not_count_against_the_element_limit() {
+        // Rows of two cells (each with a value) hold more elements than the limit in all, but the
+        // tree never keeps more than one row of them.
+        let rows = MAX_XML_NODES / 4 + 1;
+        let xml = format!("<s>{}</s>", "<row><c><v>1</v></c><c><v>2</v></c></row>".repeat(rows));
+        let mut seen = 0usize;
+        parse_streaming(xml.as_bytes(), &["row"], &mut |_| {
+            seen += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(seen, rows);
+        // One row as large as the limit is still refused.
+        let xml = format!("<s><row>{}</row></s>", "<c/>".repeat(MAX_XML_NODES + 1));
+        assert!(parse_streaming(xml.as_bytes(), &["row"], &mut |_| Ok(())).is_err());
     }
 
     #[test]

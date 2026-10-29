@@ -72,6 +72,11 @@ carries a notice on its first line.
    `src/app/commands.rs`, `src/grid/{interact,quadrant,show}.rs`, `src/ribbon/home.rs`, `src/i18n/*.rs`
    (`ja.rs` is the master list), the new `src/source_marks.rs` and `tests/source_links.rs`). Not
    proposed upstream.
+4. **Streamed rows and the XML element limit** (2026). GridCraft v0.13.0 refuses a part whose tree would hold
+   more than 1,000,000 elements (`MAX_XML_NODES`), but counted every element of the rows it streams out of the
+   tree too, so a worksheet of more than about 500,000 cells read as damaged and lost every row after the
+   limit. A streamed element now takes its elements out of the count; one row that large is still refused.
+   Files: `crates/xlsx/src/xml.rs`. Meant to be proposed upstream.
 
 An earlier change, the host chrome switch, was merged upstream as
 [storytold/gridcraft#1877](https://github.com/storytold/gridcraft/pull/1877) and is in GridCraft from v0.10.0.
