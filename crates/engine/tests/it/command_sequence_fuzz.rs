@@ -993,7 +993,7 @@ fn curated_params(rng: &mut Rng, wb: &Workbook, id: &str) -> Json {
         "source.set" => {
             // Mostly a run of the active sheet's hard-coded numbers (what a host links), so the
             // invariant that a link stays on its value has links to check; otherwise anywhere.
-            let sh = wb.sheet(wb.active_sheet);
+            let sh = wb.sheet(wb.active_sheet());
             let numbers: Vec<CellRef> = sh
                 .map(|sh| sh.cells.iter().filter(|(c, x)| c.row < 200 && x.formula.is_none() && x.value.is_number()).map(|(c, _)| c).collect())
                 .unwrap_or_default();

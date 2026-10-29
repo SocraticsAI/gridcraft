@@ -36,6 +36,9 @@ pub struct Ctx<'a> {
     /// Cell source-link parts read into the model (normalized names), which the pass-through
     /// leaves out without reading them again.
     pub sources_parts: Vec<String>,
+    /// By sheet name, the ranges the sheet's dynamic-array and legacy array formulas fill in the
+    /// file: no cell in one takes a source link.
+    pub array_ranges: std::collections::HashMap<String, Vec<RangeRef>>,
 }
 
 impl Ctx<'_> {
@@ -243,6 +246,7 @@ pub fn read_xlsx(bytes: &[u8]) -> Result<(Workbook, ReadReport), IoError> {
         cell_pictures: vec![],
         cf_ext_ids: vec![],
         sources_parts: vec![],
+        array_ranges: Default::default(),
     };
     let root_rels = cx.pkg.rels("")?;
     let wb_part = find_rel(&root_rels, "officeDocument").map(|r| r.target.clone()).unwrap_or_else(|| "xl/workbook.xml".into());

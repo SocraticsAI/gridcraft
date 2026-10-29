@@ -107,12 +107,14 @@ pub fn is_sources_part(cx: &Ctx<'_>, part: &str) -> bool {
 /// Reads the links of every source-links part related from the workbook into its sheets, by
 /// sheet name. Unknown sheets, files without a path, bad references and links without a locator
 /// are skipped; links whose file is not a relative path inside the folder
-/// ([`SourceLink::is_relative_path`]) are dropped with a warning that counts them.
+/// ([`SourceLink::is_relative_path`]) are dropped with a warning that counts them, and so are
+/// links on a formula cell or a cell an array formula fills, which `source.set` refuses.
 /// Each part is read once, under the package's own per-part and total limits, and recorded in
 /// `cx.sources_parts`.
 pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
     let mut count = 0usize;
     let mut outside = 0usize;
+    let mut computed = 0usize;
     let (max, mut excess) = (max_links(), 0usize);
     for r in wb_rels.iter().filter(|r| !r.external && r.kind.eq_ignore_ascii_case("customXml")) {
         if is_sources_part(cx, &r.target) {
@@ -141,7 +143,8 @@ pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
         for se in root.kids("sheet") {
             let Some(si) = se.attr("name").and_then(|n| wb.sheet_index(n)) else { continue };
             let Some(sheet) = wb.sheets.get_mut(si) else { continue };
-            let sheet = Arc::make_mut(sheet).sources_mut();
+            let sheet = Arc::make_mut(sheet);
+            let arrays = cx.array_ranges.get(&sheet.name).map_or(&[][..], Vec::as_slice);
             for fe in se.kids("file") {
                 let Some(file) = fe.attr("path").map(decode_xstring).filter(|f| !f.trim().is_empty()) else { continue };
                 // A crafted file mustn't plant a link to a path outside the folder (an absolute
@@ -160,7 +163,13 @@ pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
                     }
                     let Some(cell) = l.attr("ref").and_then(CellRef::parse).filter(CellRef::is_valid) else { continue };
                     let Some(locator) = l.attr("locator").map(decode_xstring).filter(|s| !s.trim().is_empty()) else { continue };
-                    sheet.insert(cell, SourceLink { file: file.clone(), locator });
+                    // As `source.set`: a formula's value, or one an array formula fills in, has no
+                    // source of its own.
+                    if sheet.cell(cell).is_some_and(|c| c.formula.is_some()) || arrays.iter().any(|r| r.contains(cell)) {
+                        computed += 1;
+                        continue;
+                    }
+                    sheet.sources_mut().insert(cell, SourceLink { file: file.clone(), locator });
                     count += 1;
                 }
             }
@@ -171,6 +180,9 @@ pub fn read(cx: &mut Ctx<'_>, wb_rels: &[Rel], wb: &mut Workbook) {
     }
     if outside > 0 {
         cx.warn(format!("{outside} cell source links were dropped: their file is not a relative path inside the folder"));
+    }
+    if computed > 0 {
+        cx.warn(format!("{computed} cell source links were dropped: their cell holds a formula or a formula's spilled result"));
     }
 }
 
@@ -344,6 +356,33 @@ mod tests {
         assert_eq!(s.sources.get(&CellRef::new(3, 3)).map(|l| &*l.file), Some("Cash/ok.pdf"));
         let n = bad.len() * 2;
         assert!(report.warnings.iter().any(|w| w.contains(&format!("{n} cell source links"))), "{:?}", report.warnings);
+    }
+
+    #[test]
+    fn links_on_formula_cells_and_spilled_cells_are_dropped_and_counted() {
+        // A crafted file links what `source.set` refuses: a formula (A1), a shared formula's
+        // follower (A2), a dynamic array's anchor (C1) and a cell it spills into (C2), and a
+        // legacy array's range (E1:E2). Only the plain values (B1, B2) keep their links.
+        let rel = r#"<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/item1.xml"/>"#;
+        let body = r#"<sheetData>
+            <row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">B1*2</f><v>2</v></c><c r="B1"><v>1</v></c><c r="C1" cm="1"><f t="array" ref="C1:C3">_xlfn.SEQUENCE(3)</f><v>1</v></c><c r="E1"><f t="array" ref="E1:E2">B1:B2*2</f><v>2</v></c></row>
+            <row r="2"><c r="A2"><f t="shared" si="0"/><v>4</v></c><c r="B2"><v>2</v></c><c r="C2"><v>2</v></c><c r="E2"><v>4</v></c></row>
+            </sheetData>"#;
+        let mut part = String::from(r#"<?xml version="1.0"?><sources xmlns="urn:socratics:sources:2"><sheet name="Data"><file path="Cash/ok.pdf">"#);
+        for cell in ["A1", "A2", "B1", "B2", "C1", "C2", "C3", "E1", "E2"] {
+            part.push_str(&format!(r#"<link ref="{cell}" locator="{cell}"/>"#));
+        }
+        part.push_str("</file></sheet></sources>");
+        let (wb, report) = read_xlsx(&crate::tests::minimal(body, &[("customXml/item1.xml", &part)], rel, "")).unwrap();
+        let s = &wb.sheets[0];
+        let kept: Vec<String> = s.sources.iter().map(|(c, l)| format!("{}={}", c.a1(), l.locator)).collect();
+        assert_eq!(kept, ["B1=B1", "B2=B2"], "{:?}", report.warnings);
+        assert!(report.warnings.iter().any(|w| w.contains("7 cell source links") && w.contains("formula")), "{:?}", report.warnings);
+        // A file with no such links reads without that warning.
+        let part = r#"<?xml version="1.0"?><sources xmlns="urn:socratics:sources:2"><sheet name="Data"><file path="Cash/ok.pdf"><link ref="B1" locator="b"/></file></sheet></sources>"#;
+        let (wb, report) = read_xlsx(&crate::tests::minimal(body, &[("customXml/item1.xml", part)], rel, "")).unwrap();
+        assert_eq!(wb.sheets[0].sources.len(), 1);
+        assert!(!report.warnings.iter().any(|w| w.contains("source")), "{:?}", report.warnings);
     }
 
     #[test]
