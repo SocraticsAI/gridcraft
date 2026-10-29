@@ -48,7 +48,15 @@ pub const TABLE: &[(&str, Class)] = &[
 
 /// Explicit orderings *within* a layer (earlier may be used by later). Each chain is separate:
 /// `calc` and `xlsx` both build on `model` but not on each other.
-pub const INTRA_LAYER_ORDER: &[&[&str]] = &[&["core", "numfmt"], &["core", "pdf"], &["formula", "functions"], &["model", "calc"], &["model", "xlsx"]];
+// One chain per line, so adding one is a one-line diff (rustfmt would join them).
+#[rustfmt::skip]
+pub const INTRA_LAYER_ORDER: &[&[&str]] = &[
+    &["core", "numfmt"],
+    &["core", "pdf"],
+    &["formula", "functions"],
+    &["model", "calc"],
+    &["model", "xlsx"],
+];
 
 fn intra_layer_allowed(from: &str, to: &str) -> bool {
     let (from, to) = (short_name(from), short_name(to));
@@ -259,6 +267,12 @@ mod tests {
         assert!(check(&[c("gridcraft-numfmt", &[("gridcraft-core", Normal, true)])]).is_empty());
         let v = check(&[c("gridcraft-core", &[("gridcraft-numfmt", Normal, true)])]);
         assert!(matches!(v[..], [Violation::Upward { from: 0, to: 0, .. }]));
+        assert!(check(&[c("gridcraft-pdf", &[("gridcraft-core", Normal, true)])]).is_empty());
+        let v = check(&[c("gridcraft-core", &[("gridcraft-pdf", Normal, true)])]);
+        assert!(matches!(v[..], [Violation::Upward { from: 0, to: 0, .. }]), "{v:?}");
+        // Separate chains: `pdf` and `numfmt` both build on `core` but not on each other.
+        let v = check(&[c("gridcraft-pdf", &[("gridcraft-numfmt", Normal, true)])]);
+        assert!(matches!(v[..], [Violation::Upward { from: 0, to: 0, .. }]), "{v:?}");
         assert!(check(&[c("gridcraft-calc", &[("gridcraft-model", Normal, true)])]).is_empty());
         assert!(!check(&[c("gridcraft-model", &[("gridcraft-calc", Normal, true)])]).is_empty());
         assert!(!check(&[c("gridcraft-calc", &[("gridcraft-xlsx", Normal, true)])]).is_empty());
